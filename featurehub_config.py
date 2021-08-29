@@ -36,14 +36,14 @@ class FeatureHubConfig:
         return self._client_eval  # is this correct?
 
     def get_api_keys(self) -> list[str]:
-        api_keys = self._api_keys
-        return api_keys
+        return self._api_keys
 
     def get_host(self) -> str:
         return self._edge_url
 
     def repository(self) -> FeatureHubRepository:
-        self._repository = FeatureHubRepository()
+        if not self._repository:
+            self._repository = FeatureHubRepository()
         return self._repository
 
     def init(self) -> FeatureHubConfig:
