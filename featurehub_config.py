@@ -9,29 +9,24 @@ class FeatureHubConfig:
     # readyness: Readyness;
 
     _api_keys = []
-    _api_key: str
     _edge_url: str
     _client_eval: bool
     _repository: FeatureHubRepository
 
-    def __init__(self, edge_url, api_key):
+    def __init__(self, edge_url, *api_key):
         self._repository = FeatureHubRepository()
         self._edge_url = edge_url
-        self._api_key = api_key
 
         if not edge_url or not api_key:
             raise TypeError('api_key and edge_url must not be null')
 
-        self._api_keys = [api_key]
+        for key in api_key:
+            self._api_keys.append(key)
 
-        self._client_eval = '*' in self._api_key
+        self._client_eval = '*' in self._api_keys[0]
 
         if not self._edge_url[-1] == '/':
             self._edge_url += '/'
-
-    def api_key(self, api_key: str) -> FeatureHubConfig:
-        self._api_keys.append(api_key)
-        return self
 
     def client_evaluated(self) -> bool:
         return self._client_eval  # is this correct?

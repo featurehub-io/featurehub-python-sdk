@@ -3,7 +3,7 @@ import featurehub_repository
 from fh_state_base_holder import FeatureStateBaseHolder
 
 
-class FeatureHubClientTest(unittest.TestCase):
+class FeatureHubRepositoryTest(unittest.TestCase):
 
     def test_notify_func(self):
         repo = featurehub_repository.FeatureHubRepository()
