@@ -12,9 +12,10 @@ class FeatureHubConfig:
     _api_key: str
     _edge_url: str
     _client_eval: bool
+    _repository: FeatureHubRepository
 
     def __init__(self, edge_url, api_key):
-        self._repository = FeatureHubRepository
+        self._repository = FeatureHubRepository()
         self._edge_url = edge_url
         self._api_key = api_key
 
