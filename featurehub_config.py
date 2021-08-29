@@ -19,16 +19,14 @@ class FeatureHubConfig:
         self._api_key = api_key
 
         if not edge_url or not api_key:
-            raise TypeError('apiKey and edge_url must not be null')
+            raise TypeError('api_key and edge_url must not be null')
 
         self._api_keys = [api_key]
 
         self._client_eval = '*' in self._api_key
 
         if not self._edge_url[-1] == '/':
-            self._edge_url += '/'  # think this will fail as strings are immutable
-
-        self._url = self._edge_url + 'features/' + self._api_key
+            self._edge_url += '/'
 
     def api_key(self, api_key: str) -> FeatureHubConfig:
         self._api_keys.append(api_key)
@@ -43,9 +41,6 @@ class FeatureHubConfig:
 
     def get_host(self) -> str:
         return self._edge_url
-
-    def url(self) -> str:
-        return self._url
 
     def repository(self) -> FeatureHubRepository:
         self._repository = FeatureHubRepository()
