@@ -68,3 +68,5 @@ class FeatureHubConfig:
             if self._client_eval else \
             ServerEvalFeatureContext(repository, self._create_edge_service(edge_service, repository))
 
+    def close(self):
+        pass
