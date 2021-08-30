@@ -67,3 +67,8 @@ class FeatureStateBaseHolder:
 
     def is_enabled(self) -> bool:
         return self.get_boolean() is True
+
+    def is_set(self) -> bool:
+        val = self.get_value()
+        return val is not None
+

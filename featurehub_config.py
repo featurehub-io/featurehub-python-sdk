@@ -32,7 +32,7 @@ class FeatureHubConfig:
         return self._client_eval  # is this correct?
 
     def get_api_keys(self) -> list[str]:
-        return self._api_keys
+        return self._api_keys.copy()
 
     def get_host(self) -> str:
         return self._edge_url

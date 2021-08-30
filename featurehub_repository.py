@@ -41,3 +41,6 @@ class FeatureHubRepository:
 
     def is_ready(self):
         return self.ready
+
+    def feature(self, name) -> FeatureStateBaseHolder:
+        return self.features.get(name)
