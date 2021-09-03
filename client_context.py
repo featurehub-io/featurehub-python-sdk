@@ -1,23 +1,15 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Optional
 import json
 
 from edge_service import EdgeService
 from featurehub_repository import FeatureHubRepository
 from fh_state_base_holder import FeatureStateBaseHolder
-
-
-class StrategyAttributeCountryName:
-    pass
-
-
-class StrategyAttributeDeviceName:
-    pass
-
-
-class StrategyAttributePlatformName:
-    pass
+from strategy_attribute_country_name import StrategyAttributeCountryName
+from strategy_attribute_device_name import StrategyAttributeDeviceName
+from strategy_attribute_platform_name import StrategyAttributePlatformName
 
 
 class ClientContext:
@@ -29,11 +21,11 @@ class ClientContext:
         self._attributes = {}
 
     def user_key(self, value: str) -> ClientContext:
-        self._attributes['userkey'] = [value]
+        self._attributes['userkey'] = value
         return self
 
     def session_key(self, value: str) -> ClientContext:
-        self._attributes['session'] = [value]
+        self._attributes['session'] = value
         return self
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
@@ -52,10 +44,6 @@ class ClientContext:
         self._attributes['version'] = [version]
         return self
 
-    def attribute_value(self, key: str, value: str) -> ClientContext:
-        self._attributes[key] = [value]
-        return self
-
     def attribute_values(self, key: str, values: list[str]) -> ClientContext:
         self._attributes[key] = values
         return self
@@ -66,7 +54,7 @@ class ClientContext:
 
     def get_attr(self, key: str, default_value: Optional[str]) -> str:
         if self._attributes[key]:
-            return self._attributes.get(key)[0]  # is this correct? what do we want to achieve?
+            return self._attributes.get(key)
         return default_value
 
     def default_percentage_key(self) -> str:
