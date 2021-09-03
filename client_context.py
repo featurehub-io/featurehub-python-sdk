@@ -29,19 +29,19 @@ class ClientContext:
         return self
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
-        self._attributes['country'] = [value]
+        self._attributes['country'] = value
         return self
 
     def device(self, value: StrategyAttributeDeviceName) -> ClientContext:
-        self._attributes['device'] = [value]
+        self._attributes['device'] = value
         return self
 
     def platform(self, value: StrategyAttributePlatformName) -> ClientContext:
-        self._attributes['platform'] = [value]
+        self._attributes['platform'] = value
         return self
 
     def version(self, version: str) -> ClientContext:
-        self._attributes['version'] = [version]
+        self._attributes['version'] = version
         return self
 
     def attribute_values(self, key: str, values: list[str]) -> ClientContext:
