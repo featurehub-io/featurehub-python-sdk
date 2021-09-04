@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import Optional
 import json
 
@@ -16,7 +15,6 @@ class ClientContext:
     """holds client context"""
 
     def __init__(self, repo: FeatureHubRepository, edge: EdgeService):
-        """"""
         self._repository = repo
         self._attributes = {}
 
@@ -76,7 +74,7 @@ class ClientContext:
         return self.feature(name).get_string()
 
     def get_json(self, name: str) -> Optional[any]:
-        val = self.feature(name).get_raw_json
+        val = self.feature(name).get_raw_json()
         return None if not val else json.loads(val)  # is it what we want?
 
     def get_raw_json(self, name: str) -> Optional[str]:
