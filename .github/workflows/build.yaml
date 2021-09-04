@@ -1,0 +1,25 @@
+name: Build Python SDK and Unit test
+on:
+  # Triggers the workflow on push request events but only for the master branch
+  pull_request:
+    branches: [ main ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.9]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python version
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run Test
+        run: python -m unittest discover tests
