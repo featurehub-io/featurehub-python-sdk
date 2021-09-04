@@ -20,6 +20,10 @@ class FeatureHubConfig:
         if not edge_url or not api_key:
             raise TypeError('api_key and edge_url must not be null')
 
+        if any("*" in key for key in api_key):
+            if not all("*" in key for key in api_key):
+                raise TypeError('all api keys provided must be of the same type - all keys client or all keys eval')
+
         for key in api_key:
             self._api_keys.append(key)
 

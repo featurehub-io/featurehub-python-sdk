@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Optional
 import json
 
@@ -67,7 +68,7 @@ class ClientContext:
     def is_set(self, name: str) -> bool:
         return self.feature(name).is_set()
 
-    def get_number(self, name: str) -> Optional[int, float]:
+    def get_number(self, name: str) -> Optional[Decimal]:
         return self.feature(name).get_number()
 
     def get_string(self, name: str) -> Optional[str]:

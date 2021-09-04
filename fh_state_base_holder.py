@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Optional
 
 
@@ -47,7 +48,7 @@ class FeatureStateBaseHolder:
             return self.value
         return None
 
-    def get_number(self) -> Optional[int]:
+    def get_number(self) -> Optional[Decimal]:
         if self.type == 'NUMBER':
             return self.value
         return None
