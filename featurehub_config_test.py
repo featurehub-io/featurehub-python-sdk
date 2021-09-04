@@ -26,6 +26,6 @@ class FeatureHubConfigTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             FeatureHubConfig("", self.client_eval_key)
 
-    def test_no_key_provided(self):
+    def test_no_api_key_provided(self):
         with self.assertRaises(TypeError):
             FeatureHubConfig("bla")
