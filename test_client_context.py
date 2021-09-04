@@ -20,11 +20,19 @@ class TestClientContext(TestCase):
 
     @patch('featurehub_repository.FeatureHubRepository')
     @patch('edge_service.EdgeService')
-    def test_get_number_when_none(self, mock_repo, mock_edge):
+    def test_get_number_when_not_number(self, mock_repo, mock_edge):
         var = FeatureStateBaseHolder({'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
                                       'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': 'true', 'strategies': []},)
 
         mock_repo.feature.return_value = var
+        client_context = ClientContext(mock_repo, mock_edge)
+        result = client_context.get_number("bla")
+        self.assertEqual(result, None)
+
+    @patch('featurehub_repository.FeatureHubRepository')
+    @patch('edge_service.EdgeService')
+    def test_get_number_when_feature_is_none(self, mock_repo, mock_edge):
+        mock_repo.feature.return_value = None
         client_context = ClientContext(mock_repo, mock_edge)
         result = client_context.get_number("bla")
         self.assertEqual(result, None)

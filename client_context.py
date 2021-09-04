@@ -69,23 +69,23 @@ class ClientContext:
         return self.feature(name).is_set()
 
     def get_number(self, name: str) -> Optional[Decimal]:
-        return self.feature(name).get_number()
+        return self.feature(name).get_number() if self.feature(name) else None
 
     def get_string(self, name: str) -> Optional[str]:
-        return self.feature(name).get_string()
+        return self.feature(name).get_string() if self.feature(name) else None
 
     def get_json(self, name: str) -> Optional[any]:
         val = self.feature(name).get_raw_json()
-        return None if not val else json.loads(val)  # is it what we want?
+        return None if not val else json.loads(val)
 
     def get_raw_json(self, name: str) -> Optional[str]:
         return self.feature(name).get_raw_json()
 
     def get_flag(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_flag()
+        return self.feature(name).get_flag() if self.feature(name) else None
 
     def get_boolean(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_boolean()
+        return self.feature(name).get_boolean() if self.feature(name) else None
 
 
 class ClientEvalFeatureContext(ClientContext):
