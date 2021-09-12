@@ -1,7 +1,7 @@
 import unittest
 
-from lib import featurehub_repository
-from lib.fh_state_base_holder import FeatureStateBaseHolder
+from featurehub_sdk import featurehub_repository
+from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
 
 
 class FeatureHubRepositoryTest(unittest.TestCase):
@@ -35,7 +35,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
              'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}, )
 
-        self.assertEqual(self.repo.features, self.repo.features | {'FEATURE_TITLE_TO_UPPERCASE': expected}, self.repo.features)
+        self.assertEqual({'FEATURE_TITLE_TO_UPPERCASE': expected}, self.repo.features)
 
         self.repo.notify('FEATURES',
                     [{'features': [{'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',

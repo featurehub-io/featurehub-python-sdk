@@ -2,8 +2,8 @@ import unittest
 from unittest import TestCase
 from unittest.mock import patch
 
-from lib.client_context import ClientContext
-from lib.fh_state_base_holder import FeatureStateBaseHolder
+from featurehub_sdk.client_context import ClientContext
+from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
 
 
 class ClientContextTest(TestCase):

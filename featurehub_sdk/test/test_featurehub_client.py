@@ -1,8 +1,9 @@
 import unittest
 import respx
 from httpx import Response
-from lib import featurehub_client
 from unittest.mock import patch
+
+from featurehub_sdk import featurehub_client
 
 
 class FeatureHubClientTest(unittest.TestCase):

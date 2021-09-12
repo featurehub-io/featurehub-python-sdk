@@ -21,8 +21,7 @@ jobs:
           architecture: x64
       - name: Install dependencies
         run: |
-          python setup.py build
           python setup.py install
       - name: Run Test
-        run: cd lib && python -m unittest discover
+        run: cd featurehub_sdk && python -m unittest discover
 
