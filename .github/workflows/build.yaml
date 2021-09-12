@@ -20,7 +20,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python setup.py build
+          python setup.py install
       - name: Run Test
         run: cd lib && python -m unittest discover
 

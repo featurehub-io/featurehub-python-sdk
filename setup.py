@@ -6,7 +6,7 @@ setup(
     description='Official Python SDK for FeatureHub',
     author='FeatureHub.io',
     author_email='info@featurehub.io',
-    packages=['featurehub-python-sdk'],
+    packages=['lib'],
     install_requires=['httpx[http2]==0.19.*',
                       'respx==0.17.*'],
 )
