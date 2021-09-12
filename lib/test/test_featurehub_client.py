@@ -1,7 +1,7 @@
 import unittest
 import respx
 from httpx import Response
-import featurehub_client
+from lib import featurehub_client
 from unittest.mock import patch
 
 

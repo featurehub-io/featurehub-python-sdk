@@ -1,8 +1,7 @@
 import unittest
-from unittest import TestCase
 
-import featurehub_repository
-from fh_state_base_holder import FeatureStateBaseHolder
+from lib import featurehub_repository
+from lib.fh_state_base_holder import FeatureStateBaseHolder
 
 
 class FeatureHubRepositoryTest(unittest.TestCase):

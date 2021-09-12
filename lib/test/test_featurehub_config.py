@@ -1,6 +1,6 @@
 import unittest
 
-from featurehub_config import FeatureHubConfig
+from lib.featurehub_config import FeatureHubConfig
 
 
 class FeatureHubConfigTest(unittest.TestCase):
