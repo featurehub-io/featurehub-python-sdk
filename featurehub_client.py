@@ -1,5 +1,5 @@
 import httpx
-import featurehub_repository
+from featurehub_sdk import featurehub_repository
 
 
 class FeatureHubClient:

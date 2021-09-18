@@ -4,12 +4,12 @@ from decimal import Decimal
 from typing import Optional
 import json
 
-from edge_service import EdgeService
-from featurehub_repository import FeatureHubRepository
-from fh_state_base_holder import FeatureStateBaseHolder
-from strategy_attribute_country_name import StrategyAttributeCountryName
-from strategy_attribute_device_name import StrategyAttributeDeviceName
-from strategy_attribute_platform_name import StrategyAttributePlatformName
+from featurehub_sdk.edge_service import EdgeService
+from featurehub_sdk.featurehub_repository import FeatureHubRepository
+from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
+from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
+from featurehub_sdk.strategy_attribute_device_name import StrategyAttributeDeviceName
+from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePlatformName
 
 
 class ClientContext:

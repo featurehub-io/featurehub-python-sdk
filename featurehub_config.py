@@ -1,8 +1,8 @@
 from __future__ import annotations
-
-from client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext
-from edge_service import EdgeService
-from featurehub_repository import FeatureHubRepository
+from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext
+from featurehub_sdk.edge_service import EdgeService
+from featurehub_sdk.featurehub_client import FeatureHubClient
+from featurehub_sdk.featurehub_repository import FeatureHubRepository
 
 
 class FeatureHubConfig:
@@ -14,6 +14,7 @@ class FeatureHubConfig:
     _repository: FeatureHubRepository
 
     def __init__(self, edge_url, *api_key):
+        self._edge_service = None
         self._repository = FeatureHubRepository()
         self._edge_url = edge_url
 
@@ -62,7 +63,9 @@ class FeatureHubConfig:
         pass
 
     def edge_service_provider(self) -> EdgeService:
-        pass
+        if self._edge_service is None:
+            self._edge_service = FeatureHubClient(self._edge_url, self._api_keys, self._repository)
+        return self._edge_service
 
     def new_context(self) -> ClientContext:
         repository = self.repository()
