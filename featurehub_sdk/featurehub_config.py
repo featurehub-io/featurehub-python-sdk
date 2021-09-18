@@ -52,7 +52,7 @@ class FeatureHubConfig:
         self.repository()
 
         # ensure the edge service provider exists
-        self._create_edge_service(self.edge_service_provider())
+        self._create_edge_service(self.edge_service_provider(), self.repository)
 
         return self
 

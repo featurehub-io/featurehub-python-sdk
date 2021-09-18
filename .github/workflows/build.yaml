@@ -20,7 +20,8 @@ jobs:
           python-version: ${{ matrix.python-version }}
           architecture: x64
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python setup.py install
       - name: Run Test
-        run: python -m unittest tests/*test.py
+        run: cd featurehub_sdk && python -m unittest discover
 

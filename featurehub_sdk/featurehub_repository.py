@@ -1,5 +1,6 @@
 from typing import Optional
-from fh_state_base_holder import FeatureStateBaseHolder
+
+from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
 
 
 class FeatureHubRepository:
