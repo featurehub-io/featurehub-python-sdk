@@ -6,10 +6,11 @@ See also https://www.python-boilerplate.com/flask
 """
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, abort
 from flask_cors import CORS
 
 from featurehub_sdk.featurehub_config import FeatureHubConfig
+import config as cnf
 
 
 def create_app(config=None):
@@ -26,18 +27,15 @@ def create_app(config=None):
     # Definition of the routes. Put them into their own file. See also
     # Flask Blueprints: http://flask.pocoo.org/docs/latest/blueprints
 
-
     # Create FeatureHub configuration
-    edge_url = 'https://zjbisc.demo.featurehub.io/'
-    client_eval_key = 'default/806d0fe8-2842-4d17-9e1f-1c33eedc5f31/wFk8qfmJEkLnkkJ8A8ZPTbgZPHPTJJ*heGuAGL6U8EKOUXbbRCL'
+    edge_url = cnf.edge_url
+    client_eval_key = cnf.client_eval_key
 
     config = FeatureHubConfig(edge_url, client_eval_key)
     config.init()
     fh = config.repository()
     features = fh.features
     print(features)
-
-
 
     @app.route("/")
     def hello_world():
@@ -46,6 +44,13 @@ def create_app(config=None):
     @app.route("/foo/<someId>")
     def foo_url_arg(someId):
         return jsonify({"echo": someId})
+
+    @app.route("/health/readiness")
+    def check_fh_readiness():
+        if fh.is_ready():
+            return "FeatureHub server is ready"
+        else:
+            return abort(503, 'FeatureHub server is not ready')
 
     return app
 

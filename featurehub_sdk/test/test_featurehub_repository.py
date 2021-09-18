@@ -17,7 +17,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
         self.repo.notify('FEATURES',
                     [{'features': [{'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
-        self.assertTrue(self.repo.ready)
+        self.assertTrue(self.repo._ready)
 
         expected = FeatureStateBaseHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
@@ -29,7 +29,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
         self.repo.notify('FEATURES',
                     [{'features': [{'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
-        self.assertTrue(self.repo.ready)
+        self.assertTrue(self.repo._ready)
 
         expected = FeatureStateBaseHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
@@ -51,7 +51,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
         self.repo.notify('FEATURES',
                     [{'features': [{'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
-        self.assertTrue(self.repo.ready)
+        self.assertTrue(self.repo._ready)
 
         expected = FeatureStateBaseHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
@@ -71,7 +71,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
 
     def test_notify_func_no_features(self):
         self.repo.notify('FAILED', None)
-        self.assertFalse(self.repo.ready)
+        self.assertFalse(self.repo._ready)
         self.assertEqual(self.repo.features, self.repo.features | {}, self.repo.features)
 
     def test_feature(self):

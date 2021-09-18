@@ -4,15 +4,15 @@ from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
 
 
 class FeatureHubRepository:
-    features: dict[str, FeatureStateBaseHolder] = {}
-    ready: bool
+    features: dict[str, FeatureStateBaseHolder] = {} #do we need this to be private and expose it as a getter method?
+    _ready: bool
 
     def notify(self, status: str, data: Optional[list[dict]]):
         if status == 'FEATURES':
             self.__update_features(data)
-            self.ready = True
+            self._ready = True
         elif status == 'FAILED':
-            self.ready = False
+            self._ready = False
 
     def __update_features(self, data: list[dict]):
         if data:
@@ -41,7 +41,7 @@ class FeatureHubRepository:
         holder.set_feature_state(feature_state)
 
     def is_ready(self):
-        return self.ready
+        return self._ready
 
     def feature(self, name) -> FeatureStateBaseHolder:
         return self.features.get(name)
