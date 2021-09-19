@@ -39,7 +39,10 @@ def create_app(config=None):
 
     @app.route("/")
     def hello_world():
-        return "Hello World"
+        if fh.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag():
+            return "HELLO WORLD"
+        else:
+            return "hello world"
 
     @app.route("/foo/<someId>")
     def foo_url_arg(someId):
