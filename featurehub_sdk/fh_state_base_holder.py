@@ -24,7 +24,7 @@ class FeatureStateBaseHolder:
         self.__set_feature_state(feature_state)
 
     def __set_feature_state(self, feature_state):
-        self.value = feature_state['value']
+        self.value = feature_state['value'] if 'value' in feature_state else None
         self.type = feature_state['type']
         self.version = feature_state['version']
         self.l = feature_state['l']

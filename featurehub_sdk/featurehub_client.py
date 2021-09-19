@@ -1,5 +1,5 @@
 import httpx
-import featurehub_repository
+from featurehub_sdk import featurehub_repository
 
 
 class FeatureHubClient:
@@ -15,7 +15,7 @@ class FeatureHubClient:
 
             # executorService = makeExecutorService();
 
-            self.url = host + '/features?' + '&'.join(map(lambda i: 'apiKeys=' + i, api_keys))
+            self.url = host + 'features?' + '&'.join(map(lambda i: 'apiKeys=' + i, api_keys))
             print(self.url)
             # if clientSideEvaluation:
             self.__check_for_updates()

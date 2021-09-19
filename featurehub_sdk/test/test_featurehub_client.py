@@ -17,21 +17,21 @@ class FeatureHubClientTest(unittest.TestCase):
                                                                              'l': False, 'version': 0, 'type': 'STRING', 'strategies': []}]}]
 
         respx.get("http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz").mock(return_value=Response(200, json=data))
-        featurehub_client.FeatureHubClient("http://localhost", ['abc', '123', 'xyz'], mock_repo)
+        featurehub_client.FeatureHubClient("http://localhost/", ['abc', '123', 'xyz'], mock_repo)
         mock_repo.notify.assert_called_with('FEATURES', data)
 
     @respx.mock
     @patch('featurehub_repository.FeatureHubRepository')
     def test_init_fh_client_fail(self, mock_repo):
         respx.get("http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz").mock(return_value=Response(400))
-        featurehub_client.FeatureHubClient("http://localhost", ['abc', '123', 'xyz'], mock_repo)
+        featurehub_client.FeatureHubClient("http://localhost/", ['abc', '123', 'xyz'], mock_repo)
         mock_repo.notify.assert_called_with('FAILED', None)
 
     @respx.mock
     @patch('featurehub_repository.FeatureHubRepository')
     def test_init_fh_client_empty_features(self, mock_repo):
         respx.get("http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz").mock(return_value=Response(200, json=[{}]))
-        featurehub_client.FeatureHubClient("http://localhost", ['abc', '123', 'xyz'], mock_repo)
+        featurehub_client.FeatureHubClient("http://localhost/", ['abc', '123', 'xyz'], mock_repo)
         mock_repo.notify.assert_called_with('FEATURES', [{}])
 
     @respx.mock
@@ -39,20 +39,20 @@ class FeatureHubClientTest(unittest.TestCase):
     def test_init_fh_client_empty_features_when_none_set(self, mock_repo):
         data = [{"id":"29517115-da60-4b64-99db-9da017561edd", "features": []}]
         respx.get("http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz").mock(return_value=Response(200, json=data))
-        featurehub_client.FeatureHubClient("http://localhost", ['abc', '123', 'xyz'], mock_repo)
+        featurehub_client.FeatureHubClient("http://localhost/", ['abc', '123', 'xyz'], mock_repo)
         mock_repo.notify.assert_called_with('FEATURES', data)
 
     @respx.mock
     @patch('featurehub_repository.FeatureHubRepository')
     def test_url_param(self, mock_repo):
         respx.get("http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz").mock(return_value=Response(200, json = {}))
-        client = featurehub_client.FeatureHubClient("http://localhost", ['abc', '123', 'xyz'], mock_repo)
+        client = featurehub_client.FeatureHubClient("http://localhost/", ['abc', '123', 'xyz'], mock_repo)
         self.assertEqual(client.url, "http://localhost/features?apiKeys=abc&apiKeys=123&apiKeys=xyz")
 
     @patch('featurehub_repository.FeatureHubRepository')
     def test_url_param_no_apikey_provided(self, mock_repo):
         with self.assertRaises(RuntimeError):
-            featurehub_client.FeatureHubClient("http://localhost", [], mock_repo)
+            featurehub_client.FeatureHubClient("http://localhost/", [], mock_repo)
 
     @patch('featurehub_repository.FeatureHubRepository')
     def test_url_param_no_host_provided(self, mock_repo):
