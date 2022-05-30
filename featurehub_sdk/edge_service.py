@@ -1,2 +1,6 @@
 class EdgeService:
-    pass
+    def poll(self):
+        pass
+
+    def cancel_poll(self):
+        pass

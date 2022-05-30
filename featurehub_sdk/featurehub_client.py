@@ -15,7 +15,7 @@ class FeatureHubClient:
 
             # executorService = makeExecutorService();
 
-            self.url = host + 'features?' + '&'.join(map(lambda i: 'apiKeys=' + i, api_keys))
+            self.url = host + 'features?' + '&'.join(map(lambda i: 'apiKey=' + i, api_keys))
             print(self.url)
             # if clientSideEvaluation:
             self.__check_for_updates()
