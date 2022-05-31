@@ -16,10 +16,8 @@ class FeatureHubRepository:
 
     def __update_features(self, data: list[dict]):
         if data:
-            for feature_apikey in data:
-                if feature_apikey:
-                    for feature_state in feature_apikey['features']:
-                        self.__update_feature_state(feature_state)
+            for feature_state in data:
+                self.__update_feature_state(feature_state)
 
     def __update_feature_state(self, feature_state):
         if not feature_state or not feature_state['key']:
