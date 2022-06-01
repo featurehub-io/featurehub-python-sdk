@@ -1,4 +1,4 @@
-import os
+
 
 import httpx
 import threading
@@ -7,9 +7,9 @@ from featurehub_sdk.featurehub_repository import FeatureHubRepository
 
 class PollingEdgeService(EdgeService):
 
-    def __init__(self, edge_url: str, *api_keys: list[str],
+    def __init__(self, edge_url: str, api_keys: list[str],
                  repository: FeatureHubRepository,
-                 interval: int = int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "30"))):
+                 interval: int):
         self._interval = interval
         self._repository = repository
         self._cancel = None
@@ -33,10 +33,9 @@ class PollingEdgeService(EdgeService):
     async def _get_updates(self):
         # TODO: set timeout of tcp requests to 12 seconds, or give users control over it using environ vars
         with httpx.Client(http2=True) as client:
-            if self._context is not None:
-                client.headers = {'x-featurehub': self._context}
+            url = self._url if self._context is None else f"{self._url}&{self._context}"
 
-            resp = client.get(self._url)
+            resp = client.get(url)
             if resp.status_code == httpx.codes.OK:
                 self._process_successful_results(resp.json())
             elif resp.status_code == 404: # no such key
@@ -47,12 +46,18 @@ class PollingEdgeService(EdgeService):
                 return
         # otherwise its likely a transient failure, so keep trying
 
+    # this is essentially a repeating task because it "calls itself"
+    # another way to do this is with a separate class that is itself a thread descenddant
+    # which waits for the requisite time,  then triggers a callback and then essentially does the same thing
+    # if we need a repeating task elsewhere, we should consider refactoring this
     async def poll_with_interval(self):
         if not self._cancel:
             await self._get_updates()
             if not self._cancel and self._interval > 0:
-                # call  again in [interval] seconds
+                # call  again in [interval] seconds, TODO: make sure this is a one off timer??
                 self._thread = threading.Timer(self._interval, self.poll_with_interval)
+                self._thread.daemon = True # allow it to just disappear off if the app closes down
+                self._thread.start()
 
     # async polls, you can choose not to wait for updates
     # if the interval is zero, this will just issue a get updates and stop

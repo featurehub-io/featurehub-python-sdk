@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import os
 
 from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext
 from featurehub_sdk.edge_service import EdgeService
@@ -8,12 +9,13 @@ from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 from collections.abc import Callable
 
+
 class FeatureHubConfig:
     _api_keys: list[str]
     _edge_url: str
     _client_eval: bool
     _repository: FeatureHubRepository
-    _edge_service: typing.Union[EdgeService, None]
+    _edge_service: typing.Optional[EdgeService]
     _edge_service_provider: Callable[[FeatureHubRepository, list[str], str], EdgeService]
 
     def __init__(self, edge_url, *api_key):
@@ -81,7 +83,7 @@ class FeatureHubConfig:
     # a different provider or a customised provider creation
     def edge_service_provider(self,
                               edge_provider:
-                              typing.Union[Callable[[FeatureHubRepository, list[str], str], EdgeService],None] = None) \
+                              typing.Optional[Callable[[FeatureHubRepository, list[str], str], EdgeService]] = None) \
             -> Callable[[FeatureHubRepository, list[str], str], EdgeService]:
         # did the give us a new one? if not, return the default one we created on init
         if edge_provider is None:
@@ -96,7 +98,8 @@ class FeatureHubConfig:
     @staticmethod
     def _create_default_provider(repository: FeatureHubRepository, api_keys: list[str],
                                  edge_url: str) -> EdgeService:
-        return PollingEdgeService(edge_url, api_keys, repository) #TODO: this has a parameter issue for the default param
+        return PollingEdgeService(edge_url, api_keys, repository,
+                                  int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "30")))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()
@@ -104,7 +107,9 @@ class FeatureHubConfig:
 
         return ClientEvalFeatureContext(repository, edge_service) \
             if self._client_eval else \
-            ServerEvalFeatureContext(repository, edge_service)
+            ServerEvalFeatureContext(repository, self._create_edge_service)
+
+
 
     def close(self):
         if self._edge_service is not None:

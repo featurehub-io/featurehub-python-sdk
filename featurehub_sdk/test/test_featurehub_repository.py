@@ -1,7 +1,7 @@
 import unittest
 
 from featurehub_sdk import featurehub_repository
-from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
+from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 
 
 class FeatureHubRepositoryTest(unittest.TestCase):
@@ -19,7 +19,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
         self.assertTrue(self.repo._ready)
 
-        expected = FeatureStateBaseHolder(
+        expected = FeatureStateHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
              'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}, )
 
@@ -31,7 +31,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
         self.assertTrue(self.repo._ready)
 
-        expected = FeatureStateBaseHolder(
+        expected = FeatureStateHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
              'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}, )
 
@@ -41,7 +41,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
                     [{'features': [{'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
                                     'l': True, 'version': 2, 'type': 'BOOLEAN', 'value': True, 'strategies': []}]}])
 
-        expected2 = FeatureStateBaseHolder(
+        expected2 = FeatureStateHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
              'l': True, 'version': 2, 'type': 'BOOLEAN', 'value': True, 'strategies': []}, )
 
@@ -53,7 +53,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
                                     'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}]}])
         self.assertTrue(self.repo._ready)
 
-        expected = FeatureStateBaseHolder(
+        expected = FeatureStateHolder(
             {'id': '123', 'key': 'FEATURE_TITLE_TO_UPPERCASE',
              'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': False, 'strategies': []}, )
 
@@ -63,7 +63,7 @@ class FeatureHubRepositoryTest(unittest.TestCase):
                                                 'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': True,
                                                 'strategies': []}]}])
 
-        expected2 = FeatureStateBaseHolder({'id': '123', 'key': 'FEATURE_NEW',
+        expected2 = FeatureStateHolder({'id': '123', 'key': 'FEATURE_NEW',
                                             'l': True, 'version': 1, 'type': 'BOOLEAN', 'value': True,
                                             'strategies': []}, )
 

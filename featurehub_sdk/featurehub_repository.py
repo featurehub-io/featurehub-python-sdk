@@ -1,10 +1,10 @@
 from typing import Optional
 
-from featurehub_sdk.fh_state_base_holder import FeatureStateBaseHolder
+from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 
 
 class FeatureHubRepository:
-    features: dict[str, FeatureStateBaseHolder] = {} #do we need this to be private and expose it as a getter method?
+    features: dict[str, FeatureStateHolder] = {} #do we need this to be private and expose it as a getter method?
     _ready: bool
 
     def notify(self, status: str, data: Optional[list[dict]]):
@@ -26,7 +26,7 @@ class FeatureHubRepository:
         # check if feature already in the dictionary, if not add to the dictionary
         holder = self.features.get(feature_state['key'])
         if not holder:
-            new_feature = FeatureStateBaseHolder(feature_state)
+            new_feature = FeatureStateHolder(feature_state)
             self.features[feature_state['key']] = new_feature
             return
 
@@ -41,5 +41,8 @@ class FeatureHubRepository:
     def is_ready(self):
         return self._ready
 
-    def feature(self, name) -> FeatureStateBaseHolder:
+    def feature(self, name) -> FeatureStateHolder:
         return self.features.get(name)
+
+    def not_ready(self):
+        _ready = False
