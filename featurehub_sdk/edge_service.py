@@ -10,6 +10,3 @@ class EdgeService:
 
     async def context_change(self, header: str):
         pass
-
-    def cancel_poll(self):
-        pass

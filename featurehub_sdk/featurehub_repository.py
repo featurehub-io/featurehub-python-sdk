@@ -7,11 +7,17 @@ class FeatureHubRepository:
     features: dict[str, FeatureStateHolder] = {} #do we need this to be private and expose it as a getter method?
     _ready: bool
 
-    def notify(self, status: str, data: Optional[list[dict]]):
-        if status == 'FEATURES':
+    def notify(self, status: str, data: Optional[dict]):
+        if data is None:
+            return
+
+        if status == 'features':
             self.__update_features(data)
             self._ready = True
-        elif status == 'FAILED':
+        elif status == 'feature':
+            self.__update_feature_state(data)
+            self._ready = True
+        elif status == 'failed':
             self._ready = False
 
     def __update_features(self, data: list[dict]):

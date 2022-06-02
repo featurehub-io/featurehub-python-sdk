@@ -12,6 +12,7 @@ from flask_cors import CORS
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 import config as cnf
 
+app = None
 
 def create_app(config=None):
     app = Flask(__name__)
@@ -59,6 +60,7 @@ def create_app(config=None):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    app = create_app()
-    app.run(host="0.0.0.0", port=port)
+    if app is None:
+        port = int(os.environ.get("PORT", 8000))
+        app = create_app()
+        app.run(host="0.0.0.0", port=port, use_reloader=False)

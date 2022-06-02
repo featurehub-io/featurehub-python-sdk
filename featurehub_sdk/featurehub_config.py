@@ -10,6 +10,8 @@ from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 from collections.abc import Callable
 
+from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
+
 log = logging.getLogger(sys.modules[__name__].__name__)
 
 class FeatureHubConfig:
@@ -100,12 +102,12 @@ class FeatureHubConfig:
 
     # this is just an internal function that creates the default edge service if the user hasn't provided one (which
     # will be 90% of the time)
-    @staticmethod
-    def _create_default_provider(repository: FeatureHubRepository, api_keys: list[str],
+    def _create_default_provider(self, repository: FeatureHubRepository, api_keys: list[str],
                                  edge_url: str) -> EdgeService:
 
-        return PollingEdgeService(edge_url, api_keys, repository,
-                                  int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "10")))
+        return StreamingEdgeClient(edge_url, api_keys, repository)
+        # return PollingEdgeService(edge_url, api_keys, repository,
+        #                           int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "10")))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()
