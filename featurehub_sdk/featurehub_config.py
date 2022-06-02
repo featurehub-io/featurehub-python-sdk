@@ -2,13 +2,15 @@ from __future__ import annotations
 
 import typing
 import os
-
+import logging
+import sys
 from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 from collections.abc import Callable
 
+log = logging.getLogger(sys.modules[__name__].__name__)
 
 class FeatureHubConfig:
     _api_keys: list[str]
@@ -18,20 +20,22 @@ class FeatureHubConfig:
     _edge_service: typing.Optional[EdgeService]
     _edge_service_provider: Callable[[FeatureHubRepository, list[str], str], EdgeService]
 
-    def __init__(self, edge_url, *api_key):
+    def __init__(self, edge_url, api_keys: list[str]):
         self._edge_service = None
         self._repository = FeatureHubRepository()
         self._edge_url = edge_url
+        self._api_keys = api_keys
 
-        if not edge_url or not api_key:
+        if not edge_url or not api_keys:
             raise TypeError('api_key and edge_url must not be null')
 
-        if any("*" in key for key in api_key):
-            if not all("*" in key for key in api_key):
+        if any("*" in key for key in api_keys):
+            if not all("*" in key for key in api_keys):
                 raise TypeError('all api keys provided must be of the same type - all keys client or all keys eval')
 
-        for key in api_key:
-            self._api_keys.append(key)
+        for key in api_keys:
+            print("key is " + key)
+            # self._api_keys.append(key)
 
         self._client_eval = '*' in self._api_keys[0]
 
@@ -56,12 +60,13 @@ class FeatureHubConfig:
             self._repository = FeatureHubRepository()
         return self._repository
 
-    def init(self) -> FeatureHubConfig:
+    async def init(self) -> FeatureHubConfig:
+        log.info("Init request made")
         # ensure the repository exists
         self.repository()
 
         # ensure the edge service provider exists
-        self._get_or_create_edge_service()
+        await self._get_or_create_edge_service().poll()
 
         return self
 
@@ -98,8 +103,9 @@ class FeatureHubConfig:
     @staticmethod
     def _create_default_provider(repository: FeatureHubRepository, api_keys: list[str],
                                  edge_url: str) -> EdgeService:
+
         return PollingEdgeService(edge_url, api_keys, repository,
-                                  int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "30")))
+                                  int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "10")))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()

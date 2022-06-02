@@ -6,19 +6,57 @@ import json
 import urllib.parse
 
 from featurehub_sdk.edge_service import EdgeService
-from featurehub_sdk.featurehub_repository import FeatureHubRepository
-from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
 from featurehub_sdk.strategy_attribute_device_name import StrategyAttributeDeviceName
 from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePlatformName
 
 
+class FeatureState:
+    # Python can't cope with circular dependencies, which is why this is here, FeatureState/Context are a tree
+    # structure of each other, e.g. feature('X') -> raw value, ctx.feature('X').withContext(ctx).get_boolean()
+    def get_value(self):
+        pass
+
+    def get_version(self) -> str:
+        pass
+
+    def get_key(self) -> str:
+        pass
+
+    def get_string(self) -> Optional[str]:
+        pass
+
+    def get_number(self) -> Optional[Decimal]:
+        pass
+
+    def get_raw_json(self) -> Optional[str]:
+        pass
+
+    def get_boolean(self) -> Optional[bool]:
+        pass
+
+    def get_flag(self) -> bool:
+        pass
+
+    def is_enabled(self) -> bool:
+        pass
+
+    def is_set(self) -> bool:
+        pass
+
+    def with_context(self, ctx: ClientContext) -> "FeatureState":
+        pass
+
+class InternalFeatureRepository:
+    def feature(self, key: str) -> FeatureState:
+        pass
+
 class ClientContext:
     """holds client context"""
     _attributes: dict[str, object]
-    _repo: FeatureHubRepository
+    _repo: InternalFeatureRepository
 
-    def __init__(self, repo: FeatureHubRepository):
+    def __init__(self, repo: InternalFeatureRepository):
         self._repository = repo
         self._attributes = {}
 
@@ -65,8 +103,8 @@ class ClientContext:
     def is_enabled(self, name: str) -> bool:
         return self.feature(name).is_enabled()
 
-    def feature(self, name: str) -> FeatureStateHolder:
-        return self._repository.feature(name)
+    def feature(self, name: str) -> FeatureState:
+        pass
 
     def is_set(self, name: str) -> bool:
         return self.feature(name).is_set()
@@ -100,7 +138,7 @@ class ClientContext:
 class ClientEvalFeatureContext(ClientContext):
     _edge: EdgeService
 
-    def __init__(self, repo: FeatureHubRepository, edge: EdgeService):
+    def __init__(self, repo: InternalFeatureRepository, edge: EdgeService):
         super().__init__(repo)
         self._edge = edge
 
@@ -111,18 +149,19 @@ class ClientEvalFeatureContext(ClientContext):
     async def close(self):
         self._edge.close()
 
-    def feature(self, name: str) -> FeatureStateHolder:
+    def feature(self, name: str) -> FeatureState:
         return self._repository.feature(name).with_context(self)
 
-# server eval feature context needs to evaluate the context on the server, so we need to wrap up the
-# context in a bunch of url encoded key value pairs and send it off to the edge service to be updated and
-# refreshed
+
 class ServerEvalFeatureContext(ClientContext):
+    # server eval feature context needs to evaluate the context on the server, so we need to wrap up the
+    # context in a bunch of url encoded key value pairs and send it off to the edge service to be updated and
+    # refreshed
     _edge_provider: Callable[[], EdgeService]
     _old_header: Optional[str]
     _current_edge: Optional[EdgeService]
 
-    def __init__(self, repo: FeatureHubRepository, edge_provider: Callable[[], EdgeService]):
+    def __init__(self, repo: InternalFeatureRepository, edge_provider: Callable[[], EdgeService]):
         super().__init__(repo)
         self._edge_provider = edge_provider
 
@@ -139,6 +178,10 @@ class ServerEvalFeatureContext(ClientContext):
             await self._current_edge.context_change(new_header)
 
         return self
+
+    def feature(self, name: str) -> FeatureState:
+        # context never matters as the repository always reflects the correctly evaluated state
+        return self._repository.feature(name)
 
     async def close(self):
         if self._current_edge:

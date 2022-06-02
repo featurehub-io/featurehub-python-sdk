@@ -26,14 +26,14 @@ class FeatureHubRepository:
         # check if feature already in the dictionary, if not add to the dictionary
         holder = self.features.get(feature_state['key'])
         if not holder:
-            new_feature = FeatureStateHolder(feature_state)
+            new_feature = FeatureStateHolder(feature_state['key'], feature_state, None, None)
             self.features[feature_state['key']] = new_feature
             return
 
         # if feature is in the dictionary, check if version has changed
-        elif feature_state['version'] < holder.version:
+        elif feature_state.get('version') < holder.get_version():
             return
-        elif feature_state['version'] == holder.version and feature_state['value'] == holder.value:
+        elif feature_state.get('version') == holder.get_version() and feature_state.get('value') == holder.get_value():
             return
 
         holder.set_feature_state(feature_state)
@@ -41,8 +41,18 @@ class FeatureHubRepository:
     def is_ready(self):
         return self._ready
 
-    def feature(self, name) -> FeatureStateHolder:
-        return self.features.get(name)
+    def feature(self, key) -> FeatureStateHolder:
+        # we follow the standard as per other SDKs, if the key doesn't exist, we create it so the
+        # chain of repository.feature(X).get_flag() for example works but returns None and doesn't explode
+
+        fs = self.features.get(key)
+
+        if fs is None:
+            fs = FeatureStateHolder(key, None, None, None)
+            self.features[key] = fs
+
+        return fs
+
 
     def not_ready(self):
         _ready = False

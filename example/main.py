@@ -5,7 +5,7 @@ Documentation
 See also https://www.python-boilerplate.com/flask
 """
 import os
-
+import asyncio
 from flask import Flask, jsonify, abort
 from flask_cors import CORS
 
@@ -31,8 +31,8 @@ def create_app(config=None):
     edge_url = cnf.edge_url
     client_eval_key = cnf.client_eval_key
 
-    config = FeatureHubConfig(edge_url, client_eval_key)
-    config.init()
+    config = FeatureHubConfig(edge_url, [client_eval_key])
+    asyncio.run(config.init())
     fh = config.repository()
     features = fh.features
     print(features)

@@ -1,42 +1,7 @@
 from decimal import Decimal
 from typing import Optional
 
-from featurehub_sdk.client_context import ClientContext
-
-
-class FeatureState:
-    def get_value(self):
-        pass
-
-    def get_version(self) -> str:
-        pass
-
-    def get_key(self) -> str:
-        pass
-
-    def get_string(self) -> Optional[str]:
-        pass
-
-    def get_number(self) -> Optional[Decimal]:
-        pass
-
-    def get_raw_json(self) -> Optional[str]:
-        pass
-
-    def get_boolean(self) -> Optional[bool]:
-        pass
-
-    def get_flag(self) -> bool:
-        pass
-
-    def is_enabled(self) -> bool:
-        pass
-
-    def is_set(self) -> bool:
-        pass
-
-    def with_context(self, ctx: ClientContext) -> "FeatureState":
-        pass
+from featurehub_sdk.client_context import ClientContext, FeatureState
 
 
 # this represents one of 3 things:
@@ -70,7 +35,7 @@ class FeatureStateHolder(FeatureState):
 
     # we can be initialised with no state when someone request a key that does not exist
     # the parent exists so we can keep track of the original feature when we use contexts
-    def __init__(self, key: str, feature_state: Optional = None, parent_state: Optional = None, ctx: Optional = None):
+    def __init__(self, key: str, feature_state: Optional = None, parent_state: Optional["FeatureStateHolder"] = None, ctx: Optional[ClientContext] = None):
         super().__init__()
 
         self._key = key
@@ -100,7 +65,7 @@ class FeatureStateHolder(FeatureState):
         #       }
         #     }
 
-        return fs['value']
+        return fs.get('value')
 
     def with_context(self, ctx: ClientContext) -> FeatureState:
         return FeatureStateHolder(self._key, None, self, ctx)
@@ -121,7 +86,7 @@ class FeatureStateHolder(FeatureState):
 
     def locked(self):
         fs = self._feature_state()
-        return fs['l'] if fs else False
+        return fs.get('l') if fs else False
 
     def set_feature_state(self, feature_state):
         self.__set_feature_state(feature_state)
@@ -131,7 +96,7 @@ class FeatureStateHolder(FeatureState):
 
     def get_version(self) -> str:
         fs = self._feature_state()
-        return fs['version'] if fs else False
+        return fs.get('version') if fs else False
 
     def get_key(self) -> str:
         return self._key
