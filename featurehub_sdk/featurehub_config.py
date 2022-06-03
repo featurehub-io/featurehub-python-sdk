@@ -4,7 +4,8 @@ import typing
 import os
 import logging
 import sys
-from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext
+from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext, \
+    InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
@@ -18,13 +19,15 @@ class FeatureHubConfig:
     _api_keys: list[str]
     _edge_url: str
     _client_eval: bool
-    _repository: FeatureHubRepository
+    _repository: InternalFeatureRepository
     _edge_service: typing.Optional[EdgeService]
     _edge_service_provider: Callable[[FeatureHubRepository, list[str], str], EdgeService]
 
-    def __init__(self, edge_url, api_keys: list[str]):
+    def __init__(self, edge_url, api_keys: list[str],
+                 repository: typing.Optional[InternalFeatureRepository] = None,
+                 edge_provider: typing.Optional[Callable[[FeatureHubRepository, list[str], str], EdgeService]] = None):
         self._edge_service = None
-        self._repository = FeatureHubRepository()
+        self._repository = repository if repository is not None else FeatureHubRepository()
         self._edge_url = edge_url
         self._api_keys = api_keys
 
@@ -35,17 +38,13 @@ class FeatureHubConfig:
             if not all("*" in key for key in api_keys):
                 raise TypeError('all api keys provided must be of the same type - all keys client or all keys eval')
 
-        for key in api_keys:
-            print("key is " + key)
-            # self._api_keys.append(key)
-
         self._client_eval = '*' in self._api_keys[0]
 
         if not self._edge_url[-1] == '/':
             self._edge_url += '/'
 
         # this is the function we use to create our edge service if no other is specified
-        self._edge_service_provider = self._create_default_provider
+        self._edge_service_provider = edge_provider if edge_provider is not None else self._create_default_provider
         self._edge_service = None
 
     def client_evaluated(self) -> bool:
@@ -57,9 +56,13 @@ class FeatureHubConfig:
     def get_host(self) -> str:
         return self._edge_url
 
-    def repository(self) -> FeatureHubRepository:
+    def repository(self, repository: typing.Optional[FeatureHubRepository] = None) -> FeatureHubRepository:
+        if repository:
+            self._repository = repository
+
         if not self._repository:
             self._repository = FeatureHubRepository()
+
         return self._repository
 
     async def init(self) -> FeatureHubConfig:
@@ -68,7 +71,7 @@ class FeatureHubConfig:
         self.repository()
 
         # ensure the edge service provider exists
-        await self._get_or_create_edge_service().poll()
+        await self.get_or_create_edge_service().poll()
 
         return self
 
@@ -80,7 +83,7 @@ class FeatureHubConfig:
 
     # checks to see if we already have an edge service, and if we don't, ask the provider to create
     # one for us
-    def _get_or_create_edge_service(self) -> EdgeService:
+    def get_or_create_edge_service(self) -> EdgeService:
         if self._edge_service is None:
             self._edge_service = self._create_edge_service()
         return self._edge_service
@@ -111,7 +114,7 @@ class FeatureHubConfig:
 
     def new_context(self) -> ClientContext:
         repository = self.repository()
-        edge_service = self._get_or_create_edge_service()
+        edge_service = self.get_or_create_edge_service()
 
         return ClientEvalFeatureContext(repository, edge_service) \
             if self._client_eval else \

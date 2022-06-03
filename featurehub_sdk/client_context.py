@@ -6,6 +6,7 @@ import json
 import urllib.parse
 
 from featurehub_sdk.edge_service import EdgeService
+from featurehub_sdk.interceptors import InterceptorValue
 from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
 from featurehub_sdk.strategy_attribute_device_name import StrategyAttributeDeviceName
 from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePlatformName
@@ -17,7 +18,7 @@ class FeatureState:
     def get_value(self):
         pass
 
-    def get_version(self) -> str:
+    def get_version(self) -> int:
         pass
 
     def get_key(self) -> str:
@@ -50,6 +51,10 @@ class FeatureState:
 class InternalFeatureRepository:
     def feature(self, key: str) -> FeatureState:
         pass
+
+    def find_interceptor(self, feature_value: str) -> Optional[InterceptorValue]:
+        pass
+
 
 class ClientContext:
     """holds client context"""
@@ -104,16 +109,17 @@ class ClientContext:
         return self.feature(name).is_enabled()
 
     def feature(self, name: str) -> FeatureState:
-        pass
+        # context never matters as the repository always reflects the correctly evaluated state
+        return self._repository.feature(name)
 
     def is_set(self, name: str) -> bool:
         return self.feature(name).is_set()
 
     def get_number(self, name: str) -> Optional[Decimal]:
-        return self.feature(name).get_number() if self.feature(name) else None
+        return self.feature(name).get_number()
 
     def get_string(self, name: str) -> Optional[str]:
-        return self.feature(name).get_string() if self.feature(name) else None
+        return self.feature(name).get_string()
 
     def get_json(self, name: str) -> Optional[any]:
         val = self.feature(name).get_raw_json()
@@ -123,10 +129,10 @@ class ClientContext:
         return self.feature(name).get_raw_json()
 
     def get_flag(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_flag() if self.feature(name) else None
+        return self.feature(name).get_flag()
 
     def get_boolean(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_boolean() if self.feature(name) else None
+        return self.feature(name).get_boolean()
 
     async def build(self) -> ClientContext:
         pass
@@ -178,10 +184,6 @@ class ServerEvalFeatureContext(ClientContext):
             await self._current_edge.context_change(new_header)
 
         return self
-
-    def feature(self, name: str) -> FeatureState:
-        # context never matters as the repository always reflects the correctly evaluated state
-        return self._repository.feature(name)
 
     async def close(self):
         if self._current_edge:

@@ -17,7 +17,7 @@ class FeatureStateHolder(FeatureState):
     """Holder for features. Wraps raw response with features dictionary"""
 
     _key: Optional[str]
-    _internal_feature_state = {}
+    _internal_feature_state = None
     _parent_state: "FeatureStateHolder"
     _ctx: ClientContext
 
@@ -31,7 +31,7 @@ class FeatureStateHolder(FeatureState):
                 return False
 
             # if their id's and versions are the same, they have to be the same
-            return fs['id'] == o['id'] and fs['version'] == o['version']
+            return fs.get('id') == o.get('id') and fs.get('version') == o.get('version')
 
     # we can be initialised with no state when someone request a key that does not exist
     # the parent exists so we can keep track of the original feature when we use contexts
@@ -54,7 +54,7 @@ class FeatureStateHolder(FeatureState):
 
         # if the feature isn't a feature (they have asked for a feature that doesn't exist
         # or the type is wrong, return None
-        if fs is None or (feature_type is not None and fs['type'] != feature_type):
+        if fs is None or (feature_type is not None and fs.get('type') != feature_type):
             return None
 
         #     if (this._ctx != null) {
@@ -88,15 +88,15 @@ class FeatureStateHolder(FeatureState):
         fs = self._feature_state()
         return fs.get('l') if fs else False
 
-    def set_feature_state(self, feature_state):
+    def set_feature_state(self, feature_state: Optional[dict]):
         self.__set_feature_state(feature_state)
 
     def get_value(self):
         return self.__get_value(None)
 
-    def get_version(self) -> str:
+    def get_version(self) -> int:
         fs = self._feature_state()
-        return fs.get('version') if fs else False
+        return fs.get('version') if fs else -1
 
     def get_key(self) -> str:
         return self._key
@@ -121,4 +121,10 @@ class FeatureStateHolder(FeatureState):
 
     def is_set(self) -> bool:
         return self.__get_value(None) is not None
+
+    def internal_feature_state(self):
+        if self._internal_feature_state.get('l') is None:
+            return None
+
+        return self._internal_feature_state
 

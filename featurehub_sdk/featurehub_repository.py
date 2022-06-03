@@ -1,13 +1,21 @@
+import json
 from typing import Optional
 
+from featurehub_sdk.client_context import InternalFeatureRepository
 from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
+from featurehub_sdk.interceptors import ValueInterceptor, InterceptorValue
 
 
-class FeatureHubRepository:
-    features: dict[str, FeatureStateHolder] = {} #do we need this to be private and expose it as a getter method?
-    _ready: bool
+class FeatureHubRepository(InternalFeatureRepository):
+    features: dict[str, FeatureStateHolder] = {} # do we need this to be private and expose it as a getter method?
+    _ready: bool = False
+    _interceptors: list[ValueInterceptor] = []
 
     def notify(self, status: str, data: Optional[dict]):
+        if status == 'failed':
+            self._ready = False
+            return
+
         if data is None:
             return
 
@@ -17,8 +25,13 @@ class FeatureHubRepository:
         elif status == 'feature':
             self.__update_feature_state(data)
             self._ready = True
-        elif status == 'failed':
-            self._ready = False
+        elif status == 'delete_feature':
+            self._delete_feature(data)
+
+    def _delete_feature(self, data: dict):
+        feat = self.features.get(data['key'])
+        if feat:
+            feat.set_feature_state(None)
 
     def __update_features(self, data: list[dict]):
         if data:
@@ -26,7 +39,7 @@ class FeatureHubRepository:
                 self.__update_feature_state(feature_state)
 
     def __update_feature_state(self, feature_state):
-        if not feature_state or not feature_state['key']:
+        if not feature_state or not feature_state.get('key'):
             return
 
         # check if feature already in the dictionary, if not add to the dictionary
@@ -59,6 +72,26 @@ class FeatureHubRepository:
 
         return fs
 
-
     def not_ready(self):
-        _ready = False
+        self._ready = False
+
+    def register_interceptor(self, interceptor: ValueInterceptor):
+        self._interceptors.append(interceptor)
+
+    def find_interceptor(self, feature_value: str) -> Optional[InterceptorValue]:
+        for interceptor in self._interceptors:
+            found = interceptor.intercepted_value(feature_value)
+            if found is not None:
+                return found
+
+    def extract_feature_state(self) -> list:
+        # allows you to extract the internal state of value features out and store it outside the repository
+        # if you wish
+        feats = []
+
+        for k, v in self.features.items():
+            data = v.internal_feature_state()
+            if data:
+                feats.append(data)
+
+        return feats
