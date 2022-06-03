@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import MagicMock
 
 from featurehub_sdk.client_context import ServerEvalFeatureContext, ClientEvalFeatureContext
+from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 
 # we need this so we can do async testing (Stack Overflow)
@@ -53,7 +54,7 @@ class FeatureHubConfigTest(unittest.TestCase):
     @sync
     async def test_init_fh_client_success(self):
         cfg = FeatureHubConfig("http://localhost/", ['abc', '123', 'xyz'],
-                               self.mock_repo, lambda rep, keys, edge_url: self.mock_edge)
+                               self.mock_repo, lambda rep, keys, edge_provider: self.mock_edge)
 
         self.assertEqual(cfg.get_or_create_edge_service(), self.mock_edge)
 
@@ -81,6 +82,17 @@ class FeatureHubConfigTest(unittest.TestCase):
         self.assertEqual(isinstance(ctx, ServerEvalFeatureContext), False)
         self.assertEqual(isinstance(ctx, ClientEvalFeatureContext), True)
 
+    def test_replace_edge_provider_and_request(self):
+        cfg = FeatureHubConfig("http://localhost/", ['abc*123', '123*abc', 'xyz*abc'],
+                               self.mock_repo)
+        cfg.edge_service_provider(lambda rep, keys, edge_url: self.mock_edge)
+        self.assertEquals(cfg.get_or_create_edge_service(), self.mock_edge)
+
+    def test_config_edge_service(self):
+        cfg = FeatureHubConfig("http://localhost/", ['abc*123', '123*abc', 'xyz*abc'],
+                               self.mock_repo)
+
+        self.assertTrue(isinstance(cfg.get_or_create_edge_service(), EdgeService))
 
 
 if __name__ == '__main__':

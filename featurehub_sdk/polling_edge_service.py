@@ -46,9 +46,9 @@ class PollingEdgeService(EdgeService):
     async def _get_updates(self):
         # TODO: set timeout of tcp requests to 12 seconds, or give users control over it using environ vars
         url = self._url if self._context is None else f"{self._url}&{self._context}"
-        log.info(f"getting {url}")
+        log.log(5, "polling ", url)
         resp = self._http.request('GET', url)
-        log.info(f"status was {resp.status}")
+        log.log(5, "polling status", resp.status)
         if resp.status == httpx.codes.OK:
             self._process_successful_results(json.loads(resp.data.decode('utf-8')))
         elif resp.status == 404: # no such key
@@ -65,10 +65,8 @@ class PollingEdgeService(EdgeService):
     # if we need a repeating task elsewhere, we should consider refactoring this
     async def poll_with_interval(self):
         if not self._cancel:
-            log.info("attempting get updates")
             await self._get_updates()
             if not self._cancel and self._interval > 0:
-                # call  again in [interval] seconds, TODO: make sure this is a one off timer??
                 self._thread = threading.Timer(self._interval, self.poll_again)
                 self._thread.daemon = True # allow it to just disappear off if the app closes down
                 self._thread.start()
@@ -79,7 +77,6 @@ class PollingEdgeService(EdgeService):
     # async polls, you can choose not to wait for updates
     # if the interval is zero, this will just issue a get updates and stop
     async def poll(self):
-        print("inside poll")
         self._cancel = False
         await self.poll_with_interval()
 

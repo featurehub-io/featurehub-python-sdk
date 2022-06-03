@@ -8,7 +8,6 @@ from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContex
     InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
-from featurehub_sdk.polling_edge_service import PollingEdgeService
 from collections.abc import Callable
 
 from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
@@ -56,12 +55,9 @@ class FeatureHubConfig:
     def get_host(self) -> str:
         return self._edge_url
 
-    def repository(self, repository: typing.Optional[FeatureHubRepository] = None) -> FeatureHubRepository:
+    def repository(self, repository: typing.Optional[FeatureHubRepository] = None) -> InternalFeatureRepository:
         if repository:
             self._repository = repository
-
-        if not self._repository:
-            self._repository = FeatureHubRepository()
 
         return self._repository
 
@@ -118,7 +114,7 @@ class FeatureHubConfig:
 
         return ClientEvalFeatureContext(repository, edge_service) \
             if self._client_eval else \
-            ServerEvalFeatureContext(repository, self._create_edge_service)
+            ServerEvalFeatureContext(repository, edge_service)
 
 
 

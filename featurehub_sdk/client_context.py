@@ -12,6 +12,7 @@ from featurehub_sdk.strategy_attribute_device_name import StrategyAttributeDevic
 from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePlatformName
 
 
+
 class FeatureState:
     # Python can't cope with circular dependencies, which is why this is here, FeatureState/Context are a tree
     # structure of each other, e.g. feature('X') -> raw value, ctx.feature('X').withContext(ctx).get_boolean()
@@ -49,44 +50,59 @@ class FeatureState:
         pass
 
 class InternalFeatureRepository:
+    # give me the raw feature from the repository level (top level features, no contexts)
     def feature(self, key: str) -> FeatureState:
         pass
 
+    # is there an interceptor for this feature value?
     def find_interceptor(self, feature_value: str) -> Optional[InterceptorValue]:
         pass
 
+    # is the repo ready? has it had at least one set of features from any source?
+    def is_ready(self) -> bool:
+        pass
+
+    # set repo to not being ready
+    def not_ready(self) -> bool:
+        pass
 
 class ClientContext:
     """holds client context"""
     _attributes: dict[str, object]
     _repo: InternalFeatureRepository
+    USER_KEY = 'userkey'
+    SESSION = 'session'
+    COUNTRY = 'country'
+    DEVICE = 'device'
+    PLATFORM = 'platform'
+    VERSION = 'version'
 
     def __init__(self, repo: InternalFeatureRepository):
         self._repository = repo
         self._attributes = {}
 
     def user_key(self, value: str) -> ClientContext:
-        self._attributes['userkey'] = value
+        self._attributes[ClientContext.USER_KEY] = value
         return self
 
     def session_key(self, value: str) -> ClientContext:
-        self._attributes['session'] = value
+        self._attributes[ClientContext.SESSION] = value
         return self
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
-        self._attributes['country'] = value
+        self._attributes[ClientContext.COUNTRY] = value
         return self
 
     def device(self, value: StrategyAttributeDeviceName) -> ClientContext:
-        self._attributes['device'] = value
+        self._attributes[ClientContext.DEVICE] = value
         return self
 
     def platform(self, value: StrategyAttributePlatformName) -> ClientContext:
-        self._attributes['platform'] = value
+        self._attributes[ClientContext.PLATFORM] = value
         return self
 
     def version(self, version: str) -> ClientContext:
-        self._attributes['version'] = version
+        self._attributes[ClientContext.VERSION] = version
         return self
 
     def attribute_values(self, key: str, values: list[str]) -> ClientContext:
@@ -97,13 +113,14 @@ class ClientContext:
         self._attributes.clear()
         return self
 
-    def get_attr(self, key: str, default_value: Optional[str]) -> str:
-        if self._attributes[key]:
+    def get_attr(self, key: str, default_value: Optional[str] = None) -> Optional[object]:
+        if key in self._attributes:
             return self._attributes.get(key)
         return default_value
 
     def default_percentage_key(self) -> str:
-        return self.get_attr('session') if self._attributes['session'] else self.get_attr('userkey')
+        return self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
+            else str(self.get_attr(ClientContext.USER_KEY))
 
     def is_enabled(self, name: str) -> bool:
         return self.feature(name).is_enabled()
@@ -163,23 +180,25 @@ class ServerEvalFeatureContext(ClientContext):
     # server eval feature context needs to evaluate the context on the server, so we need to wrap up the
     # context in a bunch of url encoded key value pairs and send it off to the edge service to be updated and
     # refreshed
-    _edge_provider: Callable[[], EdgeService]
-    _old_header: Optional[str]
+    _old_header: Optional[str] = None
     _current_edge: Optional[EdgeService]
 
-    def __init__(self, repo: InternalFeatureRepository, edge_provider: Callable[[], EdgeService]):
+    def __init__(self, repo: InternalFeatureRepository, edge: EdgeService):
         super().__init__(repo)
-        self._edge_provider = edge_provider
+        self._current_edge = edge
+
+    def _pick_first(self, v: object):
+        return v[0] if isinstance(v, list) else v
 
     async def build(self) -> ClientContext:
-        new_header = "&".join("=".join((k, urllib.parse.quote(str(v)))) for k,v in self._attributes.items())
+        new_header = "&".join("=".join((k, urllib.parse.quote(str(self._pick_first(v))))) for k,v in self._attributes.items())
 
-        if new_header != self._old_header:
+        if self._old_header is None and len(new_header) == 0:
+            await self._current_edge.poll()  # just make sure we have started
+        elif new_header != self._old_header: # make sure it changed
             self._old_header = new_header
-            self._repository.not_ready()
 
-            if self._current_edge is None:
-                self._current_edge = self._edge_provider()
+            self._repository.not_ready()
 
             await self._current_edge.context_change(new_header)
 

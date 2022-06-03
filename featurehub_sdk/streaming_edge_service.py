@@ -16,7 +16,7 @@ log = logging.getLogger(sys.modules[__name__].__name__)
 class _StreamingThread(threading.Thread):
     _cancel: bool
     _http: urllib3.PoolManager
-    _client: Optional[sseclient.SSEClient]
+    _client: Optional[sseclient.SSEClient] = None
     _repository: FeatureHubRepository
     _url: str
 
@@ -32,8 +32,8 @@ class _StreamingThread(threading.Thread):
         headers = {'Accept': 'text/event-stream'}
         last_event_id = None
         while not self._cancel:
-            try:
-                print(f"streaming request: {self._url}")
+            # try:
+                log.log(5, "featurehub starting request: %s", self._url)
                 if last_event_id is not None:
                     headers['Last-Event-Id'] = last_event_id
                 resp = self._http.request('GET', self._url, preload_content=False, headers=headers)
@@ -41,17 +41,25 @@ class _StreamingThread(threading.Thread):
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
                         last_event_id = event.id
-                        print("received data " + event.event + ": " + event.data)
-                        self._repository.notify(event.event, json.loads(event.data))
+                        log.log(5, "received data %s: %s", event.event, event.data)
+                        self._repository.notify(event.event, self._check_data(event.data))
                         if self._cancel:
                             self._client.close()
                 elif resp.status == 404:
                     self._cancel = True
-            except (ValueError, urllib3.exceptions.ProtocolError):
-                pass
+            # except (ValueError, urllib3.exceptions.ProtocolError):
+            #     pass
+
+    def _check_data(self, data):
+        if data and data.startswith('{'):
+            return json.loads(data)
+
+        return data
+
+    def cancel(self):
+        self._cancel = True
 
     def close(self):
-        self.started = False
         self._cancel = True
         if self._client:
             self._client.close()
