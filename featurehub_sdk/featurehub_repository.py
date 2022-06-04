@@ -4,12 +4,17 @@ from typing import Optional
 from featurehub_sdk.client_context import InternalFeatureRepository
 from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 from featurehub_sdk.interceptors import ValueInterceptor, InterceptorValue
+from featurehub_sdk.strategy_matchers import ApplyFeature
 
 
 class FeatureHubRepository(InternalFeatureRepository):
     features: dict[str, FeatureStateHolder] = {} # do we need this to be private and expose it as a getter method?
     _ready: bool = False
     _interceptors: list[ValueInterceptor] = []
+    _strategy_matcher: ApplyFeature
+
+    def __init__(self, applyFeatures: Optional[ApplyFeature] = None):
+        self._strategy_matcher = applyFeatures if applyFeatures is not None else ApplyFeature()
 
     def notify(self, status: str, data: Optional[dict]):
         if status == 'failed':

@@ -9,6 +9,7 @@ import json
 import asyncio
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
+from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger(sys.modules[__name__].__name__)
 
@@ -32,7 +33,7 @@ class PollingEdgeService(EdgeService):
         self._http = urllib3.PoolManager()
 
         self._url = f"{edge_url}/features?" + "&".join(map(lambda i: 'apiKey=' + i, api_keys))
-        log.info(f"polling url {self._url}")
+        log.debug(f"polling url {self._url}")
 
     # allow us to update the interval of the current polling edge service
     def update_interval(self, interval: int):
@@ -47,7 +48,7 @@ class PollingEdgeService(EdgeService):
         # TODO: set timeout of tcp requests to 12 seconds, or give users control over it using environ vars
         url = self._url if self._context is None else f"{self._url}&{self._context}"
         log.log(5, "polling ", url)
-        resp = self._http.request('GET', url)
+        resp = self._http.request(method='GET', url=url, headers={'X-SDK:': 'Python', 'X-SDK-Version': sdk_version})
         log.log(5, "polling status", resp.status)
         if resp.status == httpx.codes.OK:
             self._process_successful_results(json.loads(resp.data.decode('utf-8')))

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import Optional, Callable
+from enum import Enum
+from typing import Optional, Any
 import json
 import urllib.parse
 
@@ -10,7 +11,6 @@ from featurehub_sdk.interceptors import InterceptorValue
 from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
 from featurehub_sdk.strategy_attribute_device_name import StrategyAttributeDeviceName
 from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePlatformName
-
 
 
 class FeatureState:
@@ -49,6 +49,131 @@ class FeatureState:
     def with_context(self, ctx: ClientContext) -> "FeatureState":
         pass
 
+# the RolloutX are normally generated from OpenAPI
+
+
+class RolloutStrategyAttributeConditional(Enum):
+    Equals = 'EQUALS',
+    EndsWith = 'ENDS_WITH',
+    StartsWith = 'STARTS_WITH',
+    Greater = 'GREATER',
+    GreaterEquals = 'GREATER_EQUALS',
+    Less = 'LESS',
+    LessEquals = 'LESS_EQUALS',
+    NotEquals = 'NOT_EQUALS',
+    Includes = 'INCLUDES',
+    Excludes = 'EXCLUDES',
+    Regex = 'REGEX'
+
+
+class RolloutStrategyAttributeFieldType(Enum):
+    String = 'STRING',
+    SemanticVersion = 'SEMANTIC_VERSION',
+    Number = 'NUMBER',
+    Date = 'DATE',
+    Datetime = 'DATETIME',
+    Boolean = 'BOOLEAN',
+    IpAddress = 'IP_ADDRESS'
+
+
+class RolloutStrategyAttribute:
+    _attr: dict
+
+    def __init__(self, attr: dict):
+        self._attr = attr
+
+    @property
+    def id(self) -> Optional[str]:
+        return self._attr.get('id')
+
+    @property
+    def conditional(self) -> RolloutStrategyAttributeConditional:
+        return RolloutStrategyAttributeConditional(self._attr.get('conditional'))
+
+    @property
+    def field_name(self) -> str:
+        return self._attr.get('fieldName')
+
+    @property
+    def values(self) -> Optional[list[Any]]:
+        return self._attr.get('values')
+
+    @property
+    def float_values(self) -> list[float]:
+        return list(map(lambda x: float(x), filter(lambda x: x is not None, self.values)))
+
+    @property
+    def str_values(self) -> list[str]:
+        return list(map(lambda x: str(x), filter(lambda x: x is not None, self.values)))
+
+    @property
+    def field_type(self) -> RolloutStrategyAttributeFieldType:
+        return RolloutStrategyAttributeFieldType(self._attr.get('type'))
+
+
+class RolloutStrategy:
+    _attr: dict
+    _attributes: list[RolloutStrategyAttribute]
+
+    def __init__(self, attr: dict):
+        self._attr = attr
+
+        rsa = self._attr.get('attributes')
+        self._attributes = list(map(lambda x: RolloutStrategyAttribute(x), list(rsa))) if rsa else []
+
+    @property
+    def id(self) -> Optional[str]:
+        return self._attr.get('id')
+
+    @property
+    def name(self) -> Optional[str]:
+        return self._attr.get('name')
+
+    @property
+    def percentage(self) -> int:
+        p = self._attr.get('percentage')
+        return int(p) if p is not None else 0
+
+    @property
+    def percentage_attributes(self) -> list[str]:
+        pa = self._attr.get('percentageAttributes')
+
+        return list(pa) if pa is not None else []
+
+    @property
+    def has_percentage_attributes(self) -> bool:
+        pa = self._attr.get('percentageAttributes')
+        return len(pa) > 0 if pa is not None else False
+
+    @property
+    def value(self) -> Optional[Any]:
+        return self._attr.get('value')
+
+    @property
+    def attributes(self) -> list[RolloutStrategyAttribute]:
+        return self._attributes
+
+    @property
+    def has_attributes(self) -> bool:
+        return len(self._attributes) > 0
+
+class Applied:
+    _matched: bool
+    _value: Any
+
+    def __init__(self, matched: bool, value: Any):
+        self._matched = matched
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def matched(self):
+        return self._matched
+
+
 class InternalFeatureRepository:
     # give me the raw feature from the repository level (top level features, no contexts)
     def feature(self, key: str) -> FeatureState:
@@ -64,6 +189,9 @@ class InternalFeatureRepository:
 
     # set repo to not being ready
     def not_ready(self) -> bool:
+        pass
+
+    def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
         pass
 
 class ClientContext:
@@ -118,6 +246,7 @@ class ClientContext:
             return self._attributes.get(key)
         return default_value
 
+    @property
     def default_percentage_key(self) -> str:
         return self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
             else str(self.get_attr(ClientContext.USER_KEY))

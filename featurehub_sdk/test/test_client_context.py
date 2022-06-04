@@ -51,10 +51,10 @@ class ClientContextTest(TestCase):
         self.assertEquals(self.client_context.version("1.0-RC7").get_attr(ClientContext.VERSION), "1.0-RC7")
         self.assertEquals(self.client_context.attribute_values('warehouse_id', ['city', 'smaller-city'])
                           .get_attr('warehouse_id'), ['city', 'smaller-city'])
-        self.assertEquals(self.client_context.default_percentage_key(), 'mary')
+        self.assertEquals(self.client_context.default_percentage_key, 'mary')
         self.assertEquals(self.client_context.clear().get_attr(ClientContext.USER_KEY), None)
         self.assertEquals(self.client_context.user_key('fred').get_attr(ClientContext.USER_KEY), 'fred')
-        self.assertEquals(self.client_context.default_percentage_key(), 'fred')
+        self.assertEquals(self.client_context.default_percentage_key, 'fred')
 
     async def test_passed_methods(self):
         await self.client_context.build()

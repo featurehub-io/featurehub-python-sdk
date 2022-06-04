@@ -9,6 +9,7 @@ import sys
 
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
+from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger(sys.modules[__name__].__name__)
 
@@ -29,6 +30,7 @@ class _StreamingThread(threading.Thread):
         self._http = urllib3.PoolManager()
 
     def run(self):
+        # headers = {'Accept': 'text/event-stream', 'X-SDK:': 'Python', 'X-SDK-Version': sdk_version}
         headers = {'Accept': 'text/event-stream'}
         last_event_id = None
         while not self._cancel:
@@ -41,6 +43,7 @@ class _StreamingThread(threading.Thread):
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
                         last_event_id = event.id
+                        print("data is " + event.event, event.data)
                         log.log(5, "received data %s: %s", event.event, event.data)
                         self._repository.notify(event.event, self._check_data(event.data))
                         if self._cancel:
@@ -51,7 +54,7 @@ class _StreamingThread(threading.Thread):
             #     pass
 
     def _check_data(self, data):
-        if data and data.startswith('{'):
+        if data and (data.startswith('{') or data.startswith('[')):
             return json.loads(data)
 
         return data
