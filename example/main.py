@@ -11,6 +11,7 @@ from flask_cors import CORS
 
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 import config as cnf
+from featurehub_sdk.polling_edge_service import PollingEdgeService
 
 app = None
 
@@ -33,6 +34,8 @@ def create_app(config=None):
     client_eval_key = cnf.client_eval_key
 
     config = FeatureHubConfig(edge_url, [client_eval_key])
+    # config.edge_service_provider(lambda repository, api_keys,
+    #                                     edge_url: PollingEdgeService(edge_url, api_keys, repository, 10))
     asyncio.run(config.init())
     fh = config.repository()
     features = fh.features
