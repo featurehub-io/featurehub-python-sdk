@@ -1,7 +1,7 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Union
 
-from featurehub_sdk.client_context import ClientContext, FeatureState
+from featurehub_sdk.client_context import ClientContext, FeatureState, InternalFeatureRepository, RolloutStrategy
 
 
 # this represents one of 3 things:
@@ -13,6 +13,9 @@ from featurehub_sdk.client_context import ClientContext, FeatureState
 #   that feature. so ctx1 and ctx2 will each get their own copy of a FeatureStateHolder but it stores no actual state,
 #   only a reference to the parent holder, that means as new data comes in, the context needs to always refer to the
 #   current state, we have no way of searching for all of the instances of context/features and updating them.
+from featurehub_sdk.interceptors import InterceptorValue
+
+
 class FeatureStateHolder(FeatureState):
     """Holder for features. Wraps raw response with features dictionary"""
 
@@ -20,6 +23,8 @@ class FeatureStateHolder(FeatureState):
     _internal_feature_state = None
     _parent_state: "FeatureStateHolder"
     _ctx: ClientContext
+    _repo: InternalFeatureRepository
+    _encoded_strategies: list[RolloutStrategy]
 
     def __eq__(self, other):
         if not isinstance(other, FeatureStateHolder):
@@ -35,55 +40,73 @@ class FeatureStateHolder(FeatureState):
 
     # we can be initialised with no state when someone request a key that does not exist
     # the parent exists so we can keep track of the original feature when we use contexts
-    def __init__(self, key: str, feature_state: Optional = None, parent_state: Optional["FeatureStateHolder"] = None, ctx: Optional[ClientContext] = None):
+    def __init__(self, key: str,
+                 repo: InternalFeatureRepository,
+                 feature_state: Optional = None,
+                 parent_state: Optional["FeatureStateHolder"] = None,
+                 ctx: Optional[ClientContext] = None,
+                 ):
         super().__init__()
 
         self._key = key
         self._parent_state = parent_state
         self._ctx = ctx
+        self._repo = repo
+        self._encoded_strategies = []
 
         if feature_state:
             self.__set_feature_state(feature_state)
 
     def __set_feature_state(self, feature_state):
         self._internal_feature_state = feature_state
+        found_strategies = feature_state.get('strategies') if feature_state and feature_state.get('strategies') else []
 
-    def __get_value(self, feature_type: Optional[str]) -> Optional[object]:
+        self._encoded_strategies = list(map(lambda rs: RolloutStrategy(rs), found_strategies))
+
+    def __get_value(self, feature_type: Optional[str]) -> Union[None, bool, str, float]:
+        if not self.locked:
+            intercept = self._repo.find_interceptor(self._key)
+
+            if intercept:
+                return intercept.cast(feature_type if feature_type else 'STRING')
+
         # walk up the chain to find the original feature state (if any)
-        fs = self._feature_state()
+        fs = self._top_feature_state_holder()
 
         # if the feature isn't a feature (they have asked for a feature that doesn't exist
         # or the type is wrong, return None
-        if fs is None or (feature_type is not None and fs.get('type') != feature_type):
+        if fs is None or (feature_type is not None and fs.feature_type != feature_type):
             return None
 
-        #     if (this._ctx != null) {
-        #       const matched = this._repo.apply(featureState.strategies, this._key, featureState.id, this._ctx);
-        #
-        #       if (matched.matched) {
-        #         return this._castType(type, matched.value);
-        #       }
-        #     }
+        if self._ctx is not None:
+            matched = self._repo.apply(fs._encoded_strategies, self._key, fs.id, self._ctx)
 
-        return fs.get('value')
+            if matched.matched:
+                return InterceptorValue(matched.value).cast(feature_type)
+
+        return fs._feature_state().get('value')
 
     def with_context(self, ctx: ClientContext) -> FeatureState:
-        return FeatureStateHolder(self._key, None, self, ctx)
+        return FeatureStateHolder(self._key, self._repo, None, self, ctx)
+
+    def _top_feature_state_holder(self) -> "FeatureStateHolder":
+        if self._parent_state:
+            return self._parent_state._top_feature_state_holder()
+
+        return self
 
     def _feature_state(self) -> dict:
-        # if we have a feature state, we are essentially at the top of the tree
-        # so we return that as the state
-        if self._internal_feature_state:
-            return self._internal_feature_state
+        return self._top_feature_state_holder()._internal_feature_state
 
-        # if we have a parent state, we are inside a context, so we need to walk up
-        # the tree to
-        if self._parent_state:
-            return self._parent_state._feature_state()
+    @property
+    def id(self) -> str:
+        return self._feature_state().get('id')
 
-        # this is in fact "None"
-        return self._internal_feature_state
+    @property
+    def feature_type(self) -> str:
+        return self._feature_state().get('type')
 
+    @property
     def locked(self):
         fs = self._feature_state()
         return fs.get('l') if fs else False
@@ -91,40 +114,52 @@ class FeatureStateHolder(FeatureState):
     def set_feature_state(self, feature_state: Optional[dict]):
         self.__set_feature_state(feature_state)
 
+    @property
     def get_value(self):
         return self.__get_value(None)
 
+    @property
     def get_version(self) -> int:
         fs = self._feature_state()
         return fs.get('version') if fs else -1
 
+    @property
     def get_key(self) -> str:
         return self._key
 
+    @property
     def get_string(self) -> Optional[str]:
         return self.__get_value('STRING')
 
+    @property
     def get_number(self) -> Optional[Decimal]:
         return self.__get_value('NUMBER')
 
+    @property
     def get_raw_json(self) -> Optional[str]:
         return self.__get_value('JSON')
 
+    @property
     def get_boolean(self) -> Optional[bool]:
         return self.__get_value('BOOLEAN')
 
+    @property
+    def exists(self) -> bool:
+        return self._internal_feature_state.get('l') is not None
+
+    @property
     def get_flag(self) -> bool:
-        return self.get_boolean()
+        return self.get_boolean
 
+    @property
     def is_enabled(self) -> bool:
-        return self.get_boolean() is True
+        return self.get_boolean is True
 
+    @property
     def is_set(self) -> bool:
         return self.__get_value(None) is not None
 
-    def internal_feature_state(self):
-        if self._internal_feature_state.get('l') is None:
-            return None
+    def _get_internal_feature_state(self):
+        return self._internal_feature_state if self.exists else None
 
-        return self._internal_feature_state
-
+    internal_feature_state = property(_get_internal_feature_state, __set_feature_state)

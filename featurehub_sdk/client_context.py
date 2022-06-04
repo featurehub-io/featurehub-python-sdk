@@ -53,26 +53,26 @@ class FeatureState:
 
 
 class RolloutStrategyAttributeConditional(Enum):
-    Equals = 'EQUALS',
-    EndsWith = 'ENDS_WITH',
-    StartsWith = 'STARTS_WITH',
-    Greater = 'GREATER',
-    GreaterEquals = 'GREATER_EQUALS',
-    Less = 'LESS',
-    LessEquals = 'LESS_EQUALS',
-    NotEquals = 'NOT_EQUALS',
-    Includes = 'INCLUDES',
-    Excludes = 'EXCLUDES',
+    Equals = 'EQUALS'
+    EndsWith = 'ENDS_WITH'
+    StartsWith = 'STARTS_WITH'
+    Greater = 'GREATER'
+    GreaterEquals = 'GREATER_EQUALS'
+    Less = 'LESS'
+    LessEquals = 'LESS_EQUALS'
+    NotEquals = 'NOT_EQUALS'
+    Includes = 'INCLUDES'
+    Excludes = 'EXCLUDES'
     Regex = 'REGEX'
 
 
 class RolloutStrategyAttributeFieldType(Enum):
-    String = 'STRING',
-    SemanticVersion = 'SEMANTIC_VERSION',
-    Number = 'NUMBER',
-    Date = 'DATE',
-    Datetime = 'DATETIME',
-    Boolean = 'BOOLEAN',
+    String = 'STRING'
+    SemanticVersion = 'SEMANTIC_VERSION'
+    Number = 'NUMBER'
+    Date = 'DATE'
+    Datetime = 'DATETIME'
+    Boolean = 'BOOLEAN'
     IpAddress = 'IP_ADDRESS'
 
 
@@ -283,6 +283,9 @@ class ClientContext:
     async def build(self) -> ClientContext:
         pass
 
+    def build_sync(self) -> ClientContext:
+        pass
+
     async def close(self):
         pass
 
@@ -296,6 +299,11 @@ class ClientEvalFeatureContext(ClientContext):
 
     async def build(self) -> ClientContext:
         await self._edge.poll()
+        return self
+
+    def build_sync(self) -> ClientContext:
+        # assumes you have already dont an init yourself and the repository is up and going, you should
+        # use this on your server instances
         return self
 
     async def close(self):

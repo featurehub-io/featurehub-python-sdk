@@ -60,7 +60,7 @@ class StringMatcher(StrategyMatcher):
 
         # match was only introduced in python 3.10 so...
         if attr.conditional == RolloutStrategyAttributeConditional.Equals:
-            return vals.index(supplied_value) >= 0
+            return next(filter(lambda x: supplied_value == x, vals), None) is not None
         elif attr.conditional == RolloutStrategyAttributeConditional.EndsWith:
             return next(filter(lambda x: supplied_value.endswith(x), vals), None) is not None
         elif attr.conditional == RolloutStrategyAttributeConditional.StartsWith:
@@ -80,7 +80,7 @@ class StringMatcher(StrategyMatcher):
         elif attr.conditional == RolloutStrategyAttributeConditional.Regex:
             return next(filter(lambda x: re.search(x, supplied_value), vals), None) is not None
         elif attr.conditional == RolloutStrategyAttributeConditional.NotEquals:
-            return vals.index(supplied_value) == -1
+            return next(filter(lambda x: supplied_value == x, vals), None) is None
 
         return False
 
@@ -104,7 +104,7 @@ class NumberMatcher(StrategyMatcher):
 
                 # match was only introduced in python 3.10 so...
                 if attr.conditional == RolloutStrategyAttributeConditional.Equals:
-                    return vals.index(parsed_val) >= 0
+                    return next(filter(lambda x: parsed_val == x, vals), None) is not None
                 elif attr.conditional == RolloutStrategyAttributeConditional.Greater:
                     return next(filter(lambda x: parsed_val > x, vals), None) is not None
                 elif attr.conditional == RolloutStrategyAttributeConditional.GreaterEquals:
@@ -118,7 +118,7 @@ class NumberMatcher(StrategyMatcher):
                 elif attr.conditional == RolloutStrategyAttributeConditional.Excludes:
                     return next(filter(lambda x: x in parsed_val, vals), None) is None
                 elif attr.conditional == RolloutStrategyAttributeConditional.NotEquals:
-                    return vals.index(parsed_val) == -1
+                    return next(filter(lambda x: parsed_val == x, vals), None) is None
         except ValueError:
             pass
 

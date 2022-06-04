@@ -1,20 +1,25 @@
 import json
 from typing import Optional
 
-from featurehub_sdk.client_context import InternalFeatureRepository
+from featurehub_sdk.client_context import InternalFeatureRepository, ClientContext, Applied, RolloutStrategy
 from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 from featurehub_sdk.interceptors import ValueInterceptor, InterceptorValue
 from featurehub_sdk.strategy_matchers import ApplyFeature
 
 
 class FeatureHubRepository(InternalFeatureRepository):
-    features: dict[str, FeatureStateHolder] = {} # do we need this to be private and expose it as a getter method?
+    features: dict[str, FeatureStateHolder] # do we need this to be private and expose it as a getter method?
     _ready: bool = False
-    _interceptors: list[ValueInterceptor] = []
+    _interceptors: list[ValueInterceptor]
     _strategy_matcher: ApplyFeature
 
     def __init__(self, applyFeatures: Optional[ApplyFeature] = None):
         self._strategy_matcher = applyFeatures if applyFeatures is not None else ApplyFeature()
+        self._interceptors = []
+        self.features = {}
+
+    def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: ClientContext) -> Applied:
+        return self._strategy_matcher.apply(strategies, key, feature_id, context)
 
     def notify(self, status: str, data: Optional[dict]):
         if status == 'failed':
@@ -50,14 +55,14 @@ class FeatureHubRepository(InternalFeatureRepository):
         # check if feature already in the dictionary, if not add to the dictionary
         holder = self.features.get(feature_state['key'])
         if not holder:
-            new_feature = FeatureStateHolder(feature_state['key'], feature_state, None, None)
+            new_feature = FeatureStateHolder(feature_state['key'], self, feature_state, None, None)
             self.features[feature_state['key']] = new_feature
             return
 
         # if feature is in the dictionary, check if version has changed
-        elif feature_state.get('version') < holder.get_version():
+        elif feature_state.get('version') < holder.get_version:
             return
-        elif feature_state.get('version') == holder.get_version() and feature_state.get('value') == holder.get_value():
+        elif feature_state.get('version') == holder.get_version and feature_state.get('value') == holder.get_value:
             return
 
         holder.set_feature_state(feature_state)
@@ -72,7 +77,7 @@ class FeatureHubRepository(InternalFeatureRepository):
         fs = self.features.get(key)
 
         if fs is None:
-            fs = FeatureStateHolder(key, None, None, None)
+            fs = FeatureStateHolder(key, self, None, None, None)
             self.features[key] = fs
 
         return fs
@@ -95,7 +100,7 @@ class FeatureHubRepository(InternalFeatureRepository):
         feats = []
 
         for k, v in self.features.items():
-            data = v.internal_feature_state()
+            data = v.internal_feature_state
             if data:
                 feats.append(data)
 

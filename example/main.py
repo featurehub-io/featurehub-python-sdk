@@ -40,10 +40,26 @@ def create_app(config=None):
 
     @app.route("/")
     def hello_world():
-        if fh.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag():
+        if fh.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
             return "HELLO WORLD"
         else:
             return "hello world"
+
+    @app.route("/async-name/<name>")
+    async def async_name_arg(name):
+        ctx = await config.new_context().user_key(name).build()
+        if ctx.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
+            return "HELLO WORLD"
+        else:
+            return "hello world"
+
+    @app.route("/name/<name>")
+    def name_arg(name):
+        if config.new_context().user_key(name).build_sync().feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
+            return "HELLO WORLD"
+        else:
+            return "hello world"
+
 
     @app.route("/foo/<someId>")
     def foo_url_arg(someId):
