@@ -34,7 +34,7 @@ class _StreamingThread(threading.Thread):
         headers = {'Accept': 'text/event-stream'}
         last_event_id = None
         while not self._cancel:
-            # try:
+            try:
                 log.log(5, "featurehub starting request: %s", self._url)
                 if last_event_id is not None:
                     headers['Last-Event-Id'] = last_event_id
@@ -50,8 +50,8 @@ class _StreamingThread(threading.Thread):
                             self._client.close()
                 elif resp.status == 404:
                     self._cancel = True
-            # except (ValueError, urllib3.exceptions.ProtocolError):
-            #     pass
+            except (ValueError, urllib3.exceptions.ProtocolError):
+                pass
 
     def _check_data(self, data):
         if data and (data.startswith('{') or data.startswith('[')):
