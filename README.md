@@ -76,7 +76,7 @@ Check for FeatureHub Repository readiness:
     # do something
 ```
 
-If you are not intending to use rollout strategies, you can pass empty context to the SDK.
+If you are not intending to use rollout strategies, you can pass empty context to the SDK:
 
 **Synchronous function:**
 
