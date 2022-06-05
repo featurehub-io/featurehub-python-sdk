@@ -1,2 +1,4 @@
 /venv/
 /.idea/
+/dist/
+/featurehub_sdk.egg-info/
