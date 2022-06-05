@@ -5,7 +5,7 @@ To control the feature flags from the FeatureHub Admin console, either use our [
 
 ## SDK installation
 
-`pip install featurehub-python-sdk`
+`pip install featurehub-sdk`
 
 
 ## Options to get feature updates
