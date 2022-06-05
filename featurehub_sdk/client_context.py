@@ -299,7 +299,7 @@ class ClientContext:
 
     def get_json(self, name: str) -> Optional[any]:
         val = self.feature(name).get_raw_json
-        return None if not val else json.loads(val)
+        return json.loads(val) if val else None
 
     def get_raw_json(self, name: str) -> Optional[str]:
         return self.feature(name).get_raw_json

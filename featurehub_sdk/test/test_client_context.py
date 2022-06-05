@@ -1,6 +1,6 @@
 import unittest
 from unittest import TestCase
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, PropertyMock
 
 from featurehub_sdk.client_context import ClientContext
 from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
@@ -17,27 +17,52 @@ class ClientContextTest(TestCase):
         self.client_context = ClientContext(self.mock_repo)
 
     def test_get_number(self):
+        raw_number_mock = PropertyMock(return_value=126.34)
+        type(self.mock_feature).get_number = raw_number_mock
         self.client_context.get_number('angel')
         self.mock_repo.feature.assert_called_with('angel')
-        self.mock_feature.get_number.assert_called_once_with()
-        self.mock_feature.get_boolean.assert_not_called()
+        raw_number_mock.assert_called_once_with()
+        self.assertEquals(self.mock_repo.feature.call_count, 1)
 
     def test_feature_passthrough(self):
-        self.mock_feature.get_raw_json.return_value = None
-        self.client_context.is_set('set')
-        self.client_context.is_enabled('enabled')
-        self.client_context.get_boolean('bool')
-        self.client_context.get_flag('flag')
-        self.client_context.get_string('string')
-        self.client_context.get_json('json')
-        self.client_context.get_raw_json('raw-json')
+        raw_json_mock = PropertyMock(return_value=None)
+        type(self.mock_feature).get_raw_json = raw_json_mock
 
-        self.mock_feature.get_boolean.assert_called_once_with()
-        self.mock_feature.get_flag.assert_called_once_with()
-        self.mock_feature.get_string.assert_called_once_with()
-        self.mock_feature.is_enabled.assert_called_once_with()
-        self.mock_feature.is_set.assert_called_once_with()
-        self.assertEquals(self.mock_feature.get_raw_json.call_count, 2)
+        self.client_context.get_raw_json('raw-json')
+        self.client_context.get_json('json')
+
+        self.assertEquals(raw_json_mock.call_count, 2)
+
+        raw_isset_mock = PropertyMock(return_value=True)
+        type(self.mock_feature).is_set = raw_isset_mock
+        self.assertTrue(self.client_context.is_set('set'))
+        raw_isset_mock.assert_called_once()
+
+        raw_enabled_mock = PropertyMock(return_value=True)
+        type(self.mock_feature).is_enabled = raw_enabled_mock
+        self.assertTrue(self.client_context.is_enabled('enabled'))
+        raw_enabled_mock.assert_called_once()
+
+        raw_boolean_mock = PropertyMock(return_value=True)
+        type(self.mock_feature).get_boolean = raw_boolean_mock
+        self.assertTrue(self.client_context.get_boolean('bool'))
+        raw_boolean_mock.assert_called_once()
+
+        raw_flag_mock = PropertyMock(return_value=True)
+        type(self.mock_feature).get_flag = raw_flag_mock
+        self.assertTrue(self.client_context.get_flag('flag'))
+        raw_flag_mock.assert_called_once()
+
+        raw_string_mock = PropertyMock(return_value='Maverick')
+        type(self.mock_feature).get_string = raw_string_mock
+        self.assertEquals(self.client_context.get_string('string'), 'Maverick')
+        raw_string_mock.assert_called_once()
+
+        raw_number_mock = PropertyMock(return_value=126.34)
+        type(self.mock_feature).get_number = raw_number_mock
+        self.assertEquals(self.client_context.get_number('number'), 126.34)
+        raw_number_mock.assert_called_once()
+
 
     def test_well_known_keys(self):
         self.assertEquals(self.client_context.user_key('fred').get_attr(ClientContext.USER_KEY), 'fred')
