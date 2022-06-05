@@ -1,13 +1,11 @@
 from unittest import TestCase
 from unittest.mock import patch, MagicMock
 
-from _pytest import unittest
-
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 
 import asyncio
-
+import unittest
 
 class PollingEdgeServiceTest(TestCase):
     def test_success_base_case(self):
