@@ -45,4 +45,3 @@ class EnvironmentInterceptor(ValueInterceptor):
 
         return None
 
-# TODO: should also provide a filesystem or dictionary based value interceptor

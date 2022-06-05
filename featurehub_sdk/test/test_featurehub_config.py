@@ -94,6 +94,15 @@ class FeatureHubConfigTest(unittest.TestCase):
 
         self.assertTrue(isinstance(cfg.get_or_create_edge_service(), EdgeService))
 
+    def test_config_closes_previous_edge_service(self):
+        edge = MagicMock()
+        self.mock_edge.return_value = edge
+        cfg = FeatureHubConfig('http://localhost', ['123'], self.mock_repo, self.mock_edge)
+        cfg.get_or_create_edge_service()
+        new_edge_provider = MagicMock()
+        cfg.edge_service_provider(new_edge_provider)
+        self.mock_edge.assert_called()
+        edge.close.assert_called()
 
 if __name__ == '__main__':
     unittest.main()

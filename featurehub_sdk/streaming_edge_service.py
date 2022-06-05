@@ -7,8 +7,8 @@ import threading
 import logging
 import sys
 
+from featurehub_sdk.client_context import InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
-from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger(sys.modules[__name__].__name__)
@@ -18,11 +18,11 @@ class _StreamingThread(threading.Thread):
     _cancel: bool
     _http: urllib3.PoolManager
     _client: Optional[sseclient.SSEClient] = None
-    _repository: FeatureHubRepository
+    _repository: InternalFeatureRepository
     _url: str
 
     def __init__(self, edge_url: str, api_keys: list[str],
-                 repository: FeatureHubRepository):
+                 repository: InternalFeatureRepository):
         super().__init__(daemon=True, name="streaming-featurehub")
         self._url = f"{edge_url}/features/{api_keys[0]}"
         self._repository = repository
@@ -30,8 +30,8 @@ class _StreamingThread(threading.Thread):
         self._http = urllib3.PoolManager()
 
     def run(self):
-        # headers = {'Accept': 'text/event-stream', 'X-SDK:': 'Python', 'X-SDK-Version': sdk_version}
-        headers = {'Accept': 'text/event-stream'}
+        headers = {'Accept': 'text/event-stream', 'X-SDK': 'Python', 'X-SDK-Version': sdk_version}
+        # headers = {'Accept': 'text/event-stream'}
         last_event_id = None
         while not self._cancel:
             try:
@@ -73,7 +73,7 @@ class StreamingEdgeClient(EdgeService):
     _streaming_thread: _StreamingThread
 
     def __init__(self, edge_url: str, api_keys: list[str],
-                 repository: FeatureHubRepository):
+                 repository: InternalFeatureRepository):
         self._streaming_thread = _StreamingThread(edge_url, api_keys, repository)
 
         self._client_evaluated = '*' in api_keys[0]

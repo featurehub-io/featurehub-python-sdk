@@ -1,6 +1,5 @@
 from typing import Optional
 
-import httpx
 import urllib3
 import threading
 import logging
@@ -12,6 +11,7 @@ from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger(sys.modules[__name__].__name__)
+
 
 class PollingEdgeService(EdgeService):
     _interval: int
@@ -48,20 +48,23 @@ class PollingEdgeService(EdgeService):
         # TODO: set timeout of tcp requests to 12 seconds, or give users control over it using environ vars
         url = self._url if self._context is None else f"{self._url}&{self._context}"
         log.log(5, "polling ", url)
-        resp = self._http.request(method='GET', url=url, headers={'X-SDK:': 'Python', 'X-SDK-Version': sdk_version})
+        resp = self._http.request(method='GET', url=url, headers={'X-SDK': 'Python', 'X-SDK-Version': sdk_version})
         log.log(5, "polling status", resp.status)
-        if resp.status == httpx.codes.OK:
+        x = resp.status
+        print(f"polling status {resp}")
+        if resp.status == 200:
             self._process_successful_results(json.loads(resp.data.decode('utf-8')))
         elif resp.status == 404: # no such key
             self._repository.notify("failed", None)
             self._cancel = True
+            log.error("Specified API Key does not exist %s", self._url)
         elif resp.status == 503:
             # dacha is busy, just wait
             return
         # otherwise its likely a transient failure, so keep trying
 
     # this is essentially a repeating task because it "calls itself"
-    # another way to do this is with a separate class that is itself a thread descenddant
+    # another way to do this is with a separate class that is itself a thread descendant
     # which waits for the requisite time,  then triggers a callback and then essentially does the same thing
     # if we need a repeating task elsewhere, we should consider refactoring this
     async def poll_with_interval(self):
@@ -72,6 +75,7 @@ class PollingEdgeService(EdgeService):
                 self._thread.daemon = True # allow it to just disappear off if the app closes down
                 self._thread.start()
 
+    # this ends up being synchronous
     def poll_again(self):
         asyncio.run(self.poll_with_interval())
 
@@ -96,10 +100,14 @@ class PollingEdgeService(EdgeService):
         if old_context != header:
             await self._get_updates()
 
+    @property
+    def cancelled(self):
+        return self._cancel
+
     # we get returned a bunch of environments for a GET/Poll API so we need to cycle through them
     # the result is different for streaming
     def _process_successful_results(self, data):
-        print(f"data was {data}")
+        log.log(5, "featurehub polling data was %s", data)
         for feature_apikey in data:
             if feature_apikey:
                 self._repository.notify("features", feature_apikey['features'])

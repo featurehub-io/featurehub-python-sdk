@@ -9,7 +9,7 @@ from murmurhash2 import murmurhash3
 from ipaddress import ip_address, ip_network
 
 from featurehub_sdk.client_context import ClientContext, RolloutStrategyAttributeConditional, \
-    RolloutStrategyAttributeFieldType, RolloutStrategy, RolloutStrategyAttribute, Applied
+    RolloutStrategyFieldType, RolloutStrategy, RolloutStrategyAttribute, Applied
 
 
 class PercentageCalculator:
@@ -103,7 +103,8 @@ class NumberMatcher(StrategyMatcher):
                 vals = attr.float_values
 
                 # match was only introduced in python 3.10 so...
-                if attr.conditional == RolloutStrategyAttributeConditional.Equals:
+                if attr.conditional == RolloutStrategyAttributeConditional.Equals or \
+                        attr.conditional == RolloutStrategyAttributeConditional.Includes:
                     return next(filter(lambda x: parsed_val == x, vals), None) is not None
                 elif attr.conditional == RolloutStrategyAttributeConditional.Greater:
                     return next(filter(lambda x: parsed_val > x, vals), None) is not None
@@ -113,11 +114,8 @@ class NumberMatcher(StrategyMatcher):
                     return next(filter(lambda x: parsed_val < x, vals), None) is not None
                 elif attr.conditional == RolloutStrategyAttributeConditional.LessEquals:
                     return next(filter(lambda x: parsed_val <= x, vals), None) is not None
-                elif attr.conditional == RolloutStrategyAttributeConditional.Includes:
-                    return next(filter(lambda x: x in parsed_val, vals), None) is not None
-                elif attr.conditional == RolloutStrategyAttributeConditional.Excludes:
-                    return next(filter(lambda x: x in parsed_val, vals), None) is None
-                elif attr.conditional == RolloutStrategyAttributeConditional.NotEquals:
+                elif attr.conditional == RolloutStrategyAttributeConditional.NotEquals or \
+                        attr.conditional == RolloutStrategyAttributeConditional.Excludes:
                     return next(filter(lambda x: parsed_val == x, vals), None) is None
         except ValueError:
             pass
@@ -162,21 +160,21 @@ class IPNetworkMatcher(StrategyMatcher):
 
 class MatcherRegistry(MatcherRepository):
     def find_matcher(self, attr: RolloutStrategyAttribute) -> StrategyMatcher:
-        if attr.field_type == RolloutStrategyAttributeFieldType.String or \
-                attr.field_type == RolloutStrategyAttributeFieldType.Date or \
-                attr.field_type == RolloutStrategyAttributeFieldType.Datetime:
+        if attr.field_type == RolloutStrategyFieldType.String or \
+                attr.field_type == RolloutStrategyFieldType.Date or \
+                attr.field_type == RolloutStrategyFieldType.Datetime:
             return StringMatcher()
 
-        if attr.field_type == RolloutStrategyAttributeFieldType.SemanticVersion:
+        if attr.field_type == RolloutStrategyFieldType.SemanticVersion:
             return SemanticVersionMatcher()
 
-        if attr.field_type == RolloutStrategyAttributeFieldType.Number:
+        if attr.field_type == RolloutStrategyFieldType.Number:
             return NumberMatcher()
 
-        if attr.field_type == RolloutStrategyAttributeFieldType.Boolean:
+        if attr.field_type == RolloutStrategyFieldType.Boolean:
             return BooleanMatcher()
 
-        if attr.field_type == RolloutStrategyAttributeFieldType.IpAddress:
+        if attr.field_type == RolloutStrategyFieldType.IpAddress:
             return IPNetworkMatcher()
 
         return FallthroughMatcher()
@@ -230,17 +228,19 @@ class ApplyFeature:
                         base_percentage[percentage_key] = base_percentage.get(percentage_key) + rsi.percentage
 
             if rsi.percentage == 0 and rsi.has_attributes and self.match_attribute(context, rsi):
+                print('matched here')
                 return Applied(True, rsi.value)
 
+        print('here')
         return Applied(False, None)
 
     def match_attribute(self, context: ClientContext, rs: RolloutStrategy) -> bool:
         for attr in rs.attributes:
             supplied_value = context.get_attr(attr.field_name, None)
             if supplied_value is None and attr.field_name.lower() == 'now':
-                if attr.field_type == RolloutStrategyAttributeFieldType.Date:
+                if attr.field_type == RolloutStrategyFieldType.Date:
                     supplied_value = datetime.datetime.utcnow().isoformat()[0:10]
-                elif attr.field_type == RolloutStrategyAttributeFieldType.Datetime:
+                elif attr.field_type == RolloutStrategyFieldType.Datetime:
                     supplied_value = datetime.datetime.utcnow().isoformat()
 
             if attr.values is None or supplied_value is None:
@@ -259,8 +259,10 @@ class ApplyFeature:
 
     @staticmethod
     def determine_percentage_key(context: ClientContext, rs: RolloutStrategy) -> str:
-        if rs.has_percentage_attributes:
+        if not rs.has_percentage_attributes:
             return context.default_percentage_key
 
-        return "$".join(map(lambda x: str(context.get_attr(x, '<none>')), rs.percentage_attributes))
+        return "$".join(map(lambda x:
+                            context.get_attr(x, '<none>')[0] if isinstance(context.get_attr(x, '<none>'), list)
+                            else context.get_attr(x, '<none>'), rs.percentage_attributes))
 

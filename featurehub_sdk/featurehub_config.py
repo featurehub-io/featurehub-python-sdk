@@ -10,6 +10,7 @@ from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from collections.abc import Callable
 
+from featurehub_sdk.polling_edge_service import PollingEdgeService
 from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
 
 log = logging.getLogger(sys.modules[__name__].__name__)
@@ -20,11 +21,11 @@ class FeatureHubConfig:
     _client_eval: bool
     _repository: InternalFeatureRepository
     _edge_service: typing.Optional[EdgeService]
-    _edge_service_provider: Callable[[FeatureHubRepository, list[str], str], EdgeService]
+    _edge_service_provider: Callable[[InternalFeatureRepository, list[str], str], EdgeService]
 
     def __init__(self, edge_url, api_keys: list[str],
                  repository: typing.Optional[InternalFeatureRepository] = None,
-                 edge_provider: typing.Optional[Callable[[FeatureHubRepository, list[str], str], EdgeService]] = None):
+                 edge_provider: typing.Optional[Callable[[InternalFeatureRepository, list[str], str], EdgeService]] = None):
         self._edge_service = None
         self._repository = repository if repository is not None else FeatureHubRepository()
         self._edge_url = edge_url
@@ -43,7 +44,7 @@ class FeatureHubConfig:
             self._edge_url += '/'
 
         # this is the function we use to create our edge service if no other is specified
-        self._edge_service_provider = edge_provider if edge_provider is not None else self._create_default_provider
+        self._edge_service_provider = edge_provider if edge_provider else self._create_default_provider
         self._edge_service = None
 
     def client_evaluated(self) -> bool:
@@ -89,24 +90,31 @@ class FeatureHubConfig:
     # a different provider or a customised provider creation
     def edge_service_provider(self,
                               edge_provider:
-                              typing.Optional[Callable[[FeatureHubRepository, list[str], str], EdgeService]] = None) \
-            -> Callable[[FeatureHubRepository, list[str], str], EdgeService]:
+                              typing.Optional[Callable[[InternalFeatureRepository, list[str], str], EdgeService]] = None) \
+            -> Callable[[InternalFeatureRepository, list[str], str], EdgeService]:
         # did the give us a new one? if not, return the default one we created on init
         if edge_provider is None:
             return self._edge_service_provider
 
         self._edge_service_provider = edge_provider
 
+        # they have changed the provider, so make sure its closed and
+        if self._edge_service:
+            self._edge_service.close()
+            self._edge_service = None
+
         return self._edge_service_provider
 
     # this is just an internal function that creates the default edge service if the user hasn't provided one (which
     # will be 90% of the time)
-    def _create_default_provider(self, repository: FeatureHubRepository, api_keys: list[str],
+    def _create_default_provider(self, repository: InternalFeatureRepository, api_keys: list[str],
                                  edge_url: str) -> EdgeService:
 
         return StreamingEdgeClient(edge_url, api_keys, repository)
-        # return PollingEdgeService(edge_url, api_keys, repository,
-        #                           int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "10")))
+
+    def use_polling_edge_service(self, interval: int = int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "30"))):
+        self.edge_service_provider(lambda repository, api_keys,
+                                          edge_url: PollingEdgeService(edge_url, api_keys, repository, interval))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()
@@ -115,8 +123,6 @@ class FeatureHubConfig:
         return ClientEvalFeatureContext(repository, edge_service) \
             if self._client_eval else \
             ServerEvalFeatureContext(repository, edge_service)
-
-
 
     def close(self):
         if self._edge_service is not None:

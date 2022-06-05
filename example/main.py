@@ -34,12 +34,15 @@ def create_app(config=None):
     client_eval_key = cnf.client_eval_key
 
     config = FeatureHubConfig(edge_url, [client_eval_key])
-    # config.edge_service_provider(lambda repository, api_keys,
-    #                                     edge_url: PollingEdgeService(edge_url, api_keys, repository, 10))
+    #config.edge_service_provider(lambda repository, api_keys,
+    #                                    edge_url: PollingEdgeService(edge_url, api_keys, repository, 10))
+
+    # alternative is
+    # config.use_polling_edge_service()
+    # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
+
     asyncio.run(config.init())
     fh = config.repository()
-    features = fh.features
-    print(features)
 
     @app.route("/")
     def hello_world():

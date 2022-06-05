@@ -26,18 +26,6 @@ class FeatureStateHolder(FeatureState):
     _repo: InternalFeatureRepository
     _encoded_strategies: list[RolloutStrategy]
 
-    def __eq__(self, other):
-        if not isinstance(other, FeatureStateHolder):
-            return NotImplemented
-        else:
-            fs = self._feature_state()
-            o = other._feature_state()
-            if fs is None or o is None:
-                return False
-
-            # if their id's and versions are the same, they have to be the same
-            return fs.get('id') == o.get('id') and fs.get('version') == o.get('version')
-
     # we can be initialised with no state when someone request a key that does not exist
     # the parent exists so we can keep track of the original feature when we use contexts
     def __init__(self, key: str,
@@ -73,6 +61,11 @@ class FeatureStateHolder(FeatureState):
         # walk up the chain to find the original feature state (if any)
         fs = self._top_feature_state_holder()
 
+        state = fs._feature_state()
+
+        if state is None:
+            return None
+
         # if the feature isn't a feature (they have asked for a feature that doesn't exist
         # or the type is wrong, return None
         if fs is None or (feature_type is not None and fs.feature_type != feature_type):
@@ -99,12 +92,12 @@ class FeatureStateHolder(FeatureState):
         return self._top_feature_state_holder()._internal_feature_state
 
     @property
-    def id(self) -> str:
-        return self._feature_state().get('id')
+    def id(self) -> Optional[str]:
+        return self._feature_state().get('id') if self.exists else None
 
     @property
-    def feature_type(self) -> str:
-        return self._feature_state().get('type')
+    def feature_type(self) -> Optional[str]:
+        return self._feature_state().get('type') if self.exists else None
 
     @property
     def locked(self):
@@ -124,7 +117,7 @@ class FeatureStateHolder(FeatureState):
         return fs.get('version') if fs else -1
 
     @property
-    def get_key(self) -> str:
+    def key(self) -> str:
         return self._key
 
     @property
@@ -145,10 +138,11 @@ class FeatureStateHolder(FeatureState):
 
     @property
     def exists(self) -> bool:
-        return self._internal_feature_state.get('l') is not None
+        f = self._feature_state()
+        return (f.get('l') is not None) if f else False
 
     @property
-    def get_flag(self) -> bool:
+    def get_flag(self) -> Optional[bool]:
         return self.get_boolean
 
     @property
@@ -157,7 +151,7 @@ class FeatureStateHolder(FeatureState):
 
     @property
     def is_set(self) -> bool:
-        return self.__get_value(None) is not None
+        return self.__get_value(self.feature_type) is not None
 
     def _get_internal_feature_state(self):
         return self._internal_feature_state if self.exists else None

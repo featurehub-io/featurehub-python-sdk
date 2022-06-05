@@ -1,4 +1,3 @@
-import json
 from typing import Optional
 
 from featurehub_sdk.client_context import InternalFeatureRepository, ClientContext, Applied, RolloutStrategy
@@ -13,15 +12,15 @@ class FeatureHubRepository(InternalFeatureRepository):
     _interceptors: list[ValueInterceptor]
     _strategy_matcher: ApplyFeature
 
-    def __init__(self, applyFeatures: Optional[ApplyFeature] = None):
-        self._strategy_matcher = applyFeatures if applyFeatures is not None else ApplyFeature()
+    def __init__(self, apply_features: Optional[ApplyFeature] = None):
+        self._strategy_matcher = apply_features if apply_features is not None else ApplyFeature()
         self._interceptors = []
         self.features = {}
 
     def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: ClientContext) -> Applied:
         return self._strategy_matcher.apply(strategies, key, feature_id, context)
 
-    def notify(self, status: str, data: Optional[dict]):
+    def notify(self, status: str, data: Optional):
         if status == 'failed':
             self._ready = False
             return

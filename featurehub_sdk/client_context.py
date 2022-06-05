@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Optional, Any
 import json
 import urllib.parse
+import asyncio
 
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.interceptors import InterceptorValue
@@ -16,35 +17,61 @@ from featurehub_sdk.strategy_attribute_platform_name import StrategyAttributePla
 class FeatureState:
     # Python can't cope with circular dependencies, which is why this is here, FeatureState/Context are a tree
     # structure of each other, e.g. feature('X') -> raw value, ctx.feature('X').withContext(ctx).get_boolean()
+    @property
     def get_value(self):
-        pass
+        return ""
 
+    @property
+    def locked(self):
+        return False
+
+    @property
+    def id(self):
+        return ""
+
+    @property
     def get_version(self) -> int:
-        pass
+        return -1
 
+    @property
     def get_key(self) -> str:
-        pass
+        return ""
 
+    @property
     def get_string(self) -> Optional[str]:
-        pass
+        return None
 
+    @property
     def get_number(self) -> Optional[Decimal]:
-        pass
+        return None
 
+    @property
     def get_raw_json(self) -> Optional[str]:
-        pass
+        return None
 
+    @property
     def get_boolean(self) -> Optional[bool]:
-        pass
+        return None
 
-    def get_flag(self) -> bool:
-        pass
+    @property
+    def get_flag(self) -> Optional[bool]:
+        return None
 
+    @property
     def is_enabled(self) -> bool:
-        pass
+        return False
 
+    @property
     def is_set(self) -> bool:
-        pass
+        return False
+
+    @property
+    def exists(self) -> bool:
+        return False
+
+    @property
+    def key(self) -> str:
+        return ""
 
     def with_context(self, ctx: ClientContext) -> "FeatureState":
         pass
@@ -66,7 +93,7 @@ class RolloutStrategyAttributeConditional(Enum):
     Regex = 'REGEX'
 
 
-class RolloutStrategyAttributeFieldType(Enum):
+class RolloutStrategyFieldType(Enum):
     String = 'STRING'
     SemanticVersion = 'SEMANTIC_VERSION'
     Number = 'NUMBER'
@@ -107,8 +134,8 @@ class RolloutStrategyAttribute:
         return list(map(lambda x: str(x), filter(lambda x: x is not None, self.values)))
 
     @property
-    def field_type(self) -> RolloutStrategyAttributeFieldType:
-        return RolloutStrategyAttributeFieldType(self._attr.get('type'))
+    def field_type(self) -> RolloutStrategyFieldType:
+        return RolloutStrategyFieldType(self._attr.get('type'))
 
 
 class RolloutStrategy:
@@ -194,6 +221,9 @@ class InternalFeatureRepository:
     def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
         pass
 
+    def notify(self, cmd: str, data):
+        pass
+
 class ClientContext:
     """holds client context"""
     _attributes: dict[str, object]
@@ -252,33 +282,33 @@ class ClientContext:
             else str(self.get_attr(ClientContext.USER_KEY))
 
     def is_enabled(self, name: str) -> bool:
-        return self.feature(name).is_enabled()
+        return self.feature(name).is_enabled
 
     def feature(self, name: str) -> FeatureState:
         # context never matters as the repository always reflects the correctly evaluated state
         return self._repository.feature(name)
 
     def is_set(self, name: str) -> bool:
-        return self.feature(name).is_set()
+        return self.feature(name).is_set
 
     def get_number(self, name: str) -> Optional[Decimal]:
-        return self.feature(name).get_number()
+        return self.feature(name).get_number
 
     def get_string(self, name: str) -> Optional[str]:
-        return self.feature(name).get_string()
+        return self.feature(name).get_string
 
     def get_json(self, name: str) -> Optional[any]:
-        val = self.feature(name).get_raw_json()
+        val = self.feature(name).get_raw_json
         return None if not val else json.loads(val)
 
     def get_raw_json(self, name: str) -> Optional[str]:
-        return self.feature(name).get_raw_json()
+        return self.feature(name).get_raw_json
 
     def get_flag(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_flag()
+        return self.feature(name).get_flag
 
     def get_boolean(self, name: str) -> Optional[bool]:
-        return self.feature(name).get_boolean()
+        return self.feature(name).get_boolean
 
     async def build(self) -> ClientContext:
         pass
@@ -339,6 +369,10 @@ class ServerEvalFeatureContext(ClientContext):
 
             await self._current_edge.context_change(new_header)
 
+        return self
+
+    def build_sync(self) -> ClientContext:
+        asyncio.run(self.build())
         return self
 
     async def close(self):
