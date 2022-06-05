@@ -1,0 +1,13 @@
+= Development notes for Python SDK
+
+This SDK provides two edge clients (a Streaming one based on urllib3's `sseclient-py`), and a polling one based entirely on `urllib3`. Both rely on threads to keep themselves alive, so if your server can't support multithreading you will need to periodically poll yourself and set the polling interval to 0.
+
+== Current issues:
+
+- logging - decisions and where and how and what to log
+- open telemetry baggage support is not in place
+- analytics are missing
+
+== Repo issues
+- needs reporting on how much test coverage we have
+- needs beta testing!
