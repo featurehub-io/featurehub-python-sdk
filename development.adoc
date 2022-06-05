@@ -11,7 +11,3 @@ This SDK provides two edge clients (a Streaming one based on urllib3's `sseclien
 == Repo issues
 - needs reporting on how much test coverage we have
 - needs beta testing!
-
-== Python problems
-- couldn't figure out how to do property mocks
-- async + urllib3 testing is  🤯
