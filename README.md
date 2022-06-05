@@ -18,7 +18,8 @@ There are 2 ways to request for feature updates via this SDK:
 
 - **FeatureHub polling client (GET request updates)**
 
-  In this mode, you make a GET request, on a regular basis (e.g. every 5 minutes) and the changes will be passed into the FeatureHub repository for processing. This mode is recommended for browser type applications and server applications.
+    In this mode you can set an interval (from 0 - just once) to any number of seconds between polling. This is more useful for when you have short term single threaded
+    processes like command line tools. Batch tools that iterate over data sets and wish to control when updates happen can also benefit from this method.
 
 ## Example
 
@@ -40,7 +41,7 @@ There are two options - a Server Evaluated API Key and a Client Evaluated API Ke
 
 Client Side evaluation is intended for use in secure environments (such as microservices) and is intended for rapid client side evaluation, per request for example.
 
-Server Side evaluation is more suitable when you are using an _insecure client_. (e.g. Browser). This also means you evaluate one user per client.
+Server Side evaluation is more suitable when you are using an _insecure client_. (e.g. command line tool). This also means you evaluate one user per client.
 
 #### 2. Create FeatureHub config:
 
@@ -49,30 +50,29 @@ Create `FeatureHubConfig`. You need to provide the API Key and the URL of the Fe
 ```python3
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 
-edge_url = 'http://localhost:8085/';
-client_eval_key = 'default/3f7a1a34-642b-4054-a82f-1ca2d14633ed/aH0l9TDXzauYq6rKQzVUPwbzmzGRqe*oPqyYqhUlVC50RxAzSmx';
+edge_url = 'http://localhost:8085/'
+client_eval_key = 'default/3f7a1a34-642b-4054-a82f-1ca2d14633ed/aH0l9TDXzauYq6rKQzVUPwbzmzGRqe*oPqyYqhUlVC50RxAzSmx'
 
 config = FeatureHubConfig(edge_url, [client_eval_key])
-asyncio.run(config.init()) # to support async function calls
+asyncio.run(config.init()) # run async command in sync
 
 ```
 
 By default, this SDK will use SSE client. If you decide to use FeatureHub polling client, after initialising the config, you can add this:
 
 ```python3
-interval = int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "5"))
-config.edge_service_provider(lambda repository, api_keys, edge_url: PollingEdgeService(edge_url, api_keys, repository, interval))
+config.use_polling_edge_service(30)
+# OR
+config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLL_INTERVAL or default of 30 
 ```
 
-in this case it is configured for requesting an update every 5 seconds.
-
-
+in this case it is configured for requesting an update every 30 seconds.
 
 #### 3. Check FeatureHub Repository readiness and request feature state
 
 Check for FeatureHub Repository readiness:
 ```python3
- if fh.is_ready():
+ if config.repository().is_ready():
     # do something
 ```
 
