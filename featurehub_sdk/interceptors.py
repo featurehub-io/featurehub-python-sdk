@@ -32,7 +32,7 @@ class EnvironmentInterceptor(ValueInterceptor):
     _enabled: bool
     # this is an example of an interceptor that when it starts checks the environment for a feature value override
     def __init__(self):
-        self._enabled = os.environ.get("FEATUREHUB_POLL_INTERVAL", "false") == "true"
+        self._enabled = os.environ.get("FEATUREHUB_OVERRIDE_FEATURES", "false") == "true"
 
     def sanitize_feature_name(self, feature_key: str) -> str:
         return feature_key.replace(" ", "_")

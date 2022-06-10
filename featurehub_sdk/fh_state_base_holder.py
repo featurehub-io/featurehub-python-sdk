@@ -46,7 +46,7 @@ class FeatureStateHolder(FeatureState):
             self.__set_feature_state(feature_state)
 
     def __set_feature_state(self, feature_state):
-        self._internal_feature_state = feature_state
+        self._internal_feature_state = feature_state if feature_state is not None else {}
         found_strategies = feature_state.get('strategies') if feature_state and feature_state.get('strategies') else []
 
         self._encoded_strategies = list(map(lambda rs: RolloutStrategy(rs), found_strategies))
@@ -109,7 +109,7 @@ class FeatureStateHolder(FeatureState):
 
     @property
     def get_value(self):
-        return self.__get_value(None)
+        return self.__get_value(self.feature_type if self.exists else None)
 
     @property
     def get_version(self) -> int:

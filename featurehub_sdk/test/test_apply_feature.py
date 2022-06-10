@@ -78,7 +78,7 @@ class ApplyFeatureTest(TestCase):
         })], 'FEATURE_NAME', 'fid', ctx)
 
         self.assertTrue(found.matched)
-        self.assertEquals(found.value, 'sausage')
+        self.assertEqual(found.value, 'sausage')
 
     def test_should_not_match_field_comparison_if_value_is_different(self):
         ctx = MagicMock()
@@ -112,12 +112,12 @@ class ApplyFeatureTest(TestCase):
         rs = MagicMock()
         rs.has_percentage_attributes = False
 
-        self.assertEquals(ApplyFeature.determine_percentage_key(ctx, rs), 'user@email')
+        self.assertEqual(ApplyFeature.determine_percentage_key(ctx, rs), 'user@email')
 
         rs.has_percentage_attributes = True
         rs.percentage_attributes = ['a', 'b']
 
-        self.assertEquals(ApplyFeature.determine_percentage_key(ctx, rs), 'one-thing$two-thing')
+        self.assertEqual(ApplyFeature.determine_percentage_key(ctx, rs), 'one-thing$two-thing')
 
     def test_should_process_basic_percentages_property(self):
         ctx = MagicMock(spec=ClientContext)
@@ -135,7 +135,7 @@ class ApplyFeatureTest(TestCase):
         })], 'FEATURE_NAME', 'fid', ctx)
 
         self.assertTrue(found.matched)
-        self.assertEquals(found.value, 'sausage')
+        self.assertEqual(found.value, 'sausage')
         percent_mock.assert_called_with('userkey', 'fid')
 
     def test_should_bounce_bad_percentages(self):
@@ -178,7 +178,7 @@ class ApplyFeatureTest(TestCase):
         })], 'FEATURE_NAME', 'fid', ctx)
 
         self.assertTrue(found.matched)
-        self.assertEquals(found.value, 'sausage')
+        self.assertEqual(found.value, 'sausage')
         percent_mock.assert_called_with('userkey', 'fid')
         attr_mock.assert_called_with('warehouseId', None)
 

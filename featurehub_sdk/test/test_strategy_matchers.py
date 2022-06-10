@@ -21,7 +21,7 @@ class StrategyMatcherTest(TestCase):
             'values': vals
         })
 
-        self.assertEquals(self.matcher.find_matcher(rsa).match(suppplied_val, rsa), matches)
+        self.assertEqual(self.matcher.find_matcher(rsa).match(suppplied_val, rsa), matches)
 
     def test_boolean_strategy_matcher(self):
         self.field_type = RolloutStrategyFieldType.Boolean

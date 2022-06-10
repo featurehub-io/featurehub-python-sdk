@@ -310,6 +310,9 @@ class ClientContext:
     def get_boolean(self, name: str) -> Optional[bool]:
         return self.feature(name).get_boolean
 
+    def exists(self, name: str) -> bool:
+        return self.feature(name).exists
+
     async def build(self) -> ClientContext:
         pass
 

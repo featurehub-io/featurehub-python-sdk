@@ -4,7 +4,7 @@ import unittest
 from unittest import TestCase
 from unittest.mock import MagicMock
 
-from featurehub_sdk.client_context import Applied
+from featurehub_sdk.client_context import Applied, ClientContext
 from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
 from featurehub_sdk.interceptors import InterceptorValue
 
@@ -32,7 +32,7 @@ class FeatureStateHolderTest(TestCase):
     def test_empty(self):
         key = 'E'
         fh = FeatureStateHolder(key, self._repo)
-        self.assertEquals(fh.get_version, -1)
+        self.assertEqual(fh.get_version, -1)
         self.assertIsNone(fh.id)
         self.assertFalse(fh.locked)
         self.assertFalse(fh.is_set)
@@ -41,8 +41,8 @@ class FeatureStateHolderTest(TestCase):
         key = 'F'
         f = self.feature('BOOLEAN', False)
         fh = FeatureStateHolder(key, self._repo, f)
-        self.assertEquals(fh.get_version, 1)
-        self.assertEquals(fh.id, '1')
+        self.assertEqual(fh.get_version, 1)
+        self.assertEqual(fh.id, '1')
         self.assertFalse(fh.locked)
         self.assertTrue(fh.is_set)
 
@@ -62,8 +62,8 @@ class FeatureStateHolderTest(TestCase):
         key = 'N'
         f = self.feature('NUMBER', 24.6)
         fh = FeatureStateHolder(key, self._repo, f)
-        self.assertEquals(fh.get_version, 1)
-        self.assertEquals(fh.id, '1')
+        self.assertEqual(fh.get_version, 1)
+        self.assertEqual(fh.id, '1')
         self.assertFalse(fh.locked)
         self.assertTrue(fh.is_set)
 
@@ -72,14 +72,14 @@ class FeatureStateHolderTest(TestCase):
         self.assertIsNone(fh.get_flag)
         self.assertIsNone(fh.get_string)
 
-        self.assertEquals(fh.get_number, 24.6)
+        self.assertEqual(fh.get_number, 24.6)
 
     def test_basic_string(self):
         key = 'S'
         f = self.feature('STRING', 'hoolah')
         fh = FeatureStateHolder(key, self._repo, f)
-        self.assertEquals(fh.get_version, 1)
-        self.assertEquals(fh.id, '1')
+        self.assertEqual(fh.get_version, 1)
+        self.assertEqual(fh.id, '1')
         self.assertFalse(fh.locked)
         self.assertTrue(fh.is_set)
 
@@ -90,14 +90,14 @@ class FeatureStateHolderTest(TestCase):
         self.assertIsNone(fh.get_boolean)
         self.assertIsNone(fh.get_flag)
         self.assertIsNone(fh.get_number)
-        self.assertEquals(fh.get_string, 'hoolah')
+        self.assertEqual(fh.get_string, 'hoolah')
 
     def test_basic_json(self):
         key = 'S'
         f = self.feature('JSON', 'hoolah')
         fh = FeatureStateHolder(key, self._repo, f)
-        self.assertEquals(fh.get_version, 1)
-        self.assertEquals(fh.id, '1')
+        self.assertEqual(fh.get_version, 1)
+        self.assertEqual(fh.id, '1')
         self.assertFalse(fh.locked)
         self.assertTrue(fh.is_set)
 
@@ -105,7 +105,7 @@ class FeatureStateHolderTest(TestCase):
         self.assertIsNone(fh.get_boolean)
         self.assertIsNone(fh.get_flag)
         self.assertIsNone(fh.get_number)
-        self.assertEquals(fh.get_raw_json, 'hoolah')
+        self.assertEqual(fh.get_raw_json, 'hoolah')
 
         self._repo.find_interceptor.assert_called()
 
@@ -129,7 +129,7 @@ class FeatureStateHolderTest(TestCase):
     def test_context_evaluation_triggered(self):
         key = 'L'
         f = self.feature('BOOLEAN', False)
-        ctx = MagicMock()
+        ctx = MagicMock(spec=ClientContext)
         fh = FeatureStateHolder(key, self._repo, f)
         self.assertFalse(fh.get_flag)
         fh_ctx = fh.with_context(ctx)
@@ -141,7 +141,7 @@ class FeatureStateHolderTest(TestCase):
         self.assertFalse(fh.get_value)
         self.assertTrue(fh_ctx.get_value)
 
-        self.assertEquals(fh.key, key)
+        self.assertEqual(fh.key, key)
 
 if __name__ == '__main__':
     unittest.main()

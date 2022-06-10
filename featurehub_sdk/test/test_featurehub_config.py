@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import MagicMock
 
-from featurehub_sdk.client_context import ServerEvalFeatureContext, ClientEvalFeatureContext
+from featurehub_sdk.client_context import ServerEvalFeatureContext, ClientEvalFeatureContext, InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 
@@ -22,8 +22,8 @@ MagicMock.__await__ = lambda x: async_magic().__await__()
 
 class FeatureHubConfigTest(unittest.TestCase):
     def setUp(self) -> None:
-        self.mock_edge = MagicMock()
-        self.mock_repo = MagicMock()
+        self.mock_edge = MagicMock(spec=EdgeService)
+        self.mock_repo = MagicMock(spec=InternalFeatureRepository)
 
     def test_api_keys_must_be_consistent_type(self):
         self.assertRaises(TypeError,
@@ -86,7 +86,7 @@ class FeatureHubConfigTest(unittest.TestCase):
         cfg = FeatureHubConfig("http://localhost/", ['abc*123', '123*abc', 'xyz*abc'],
                                self.mock_repo)
         cfg.edge_service_provider(lambda rep, keys, edge_url: self.mock_edge)
-        self.assertEquals(cfg.get_or_create_edge_service(), self.mock_edge)
+        self.assertEqual(cfg.get_or_create_edge_service(), self.mock_edge)
 
     def test_config_edge_service(self):
         cfg = FeatureHubConfig("http://localhost/", ['abc*123', '123*abc', 'xyz*abc'],
