@@ -38,12 +38,6 @@ class ClientEvalFeatureContextTest(TestCase):
 
         self.mock_edge.poll.assert_called_once_with()
 
-    @sync
-    async def test_close_will_close_edge(self):
-        await self.client_context.close()
-
-        self.mock_edge.close.assert_called_once_with()
-
     def test_requests_feature_with_context(self):
         self.client_context.feature('X')
 

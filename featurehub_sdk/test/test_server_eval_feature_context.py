@@ -47,11 +47,6 @@ class ServerEvalFeatureContextTest(TestCase):
         self.mock_repo.not_ready.assert_called_once()
         self.mock_edge.context_change.assert_called_once_with('userkey=fred&piffle=a%2B')
 
-    def test_close_will_close_edge(self):
-        asyncio.run(self.client_context.close())
-
-        self.mock_edge.close.assert_called_once_with()
-
     def test_requests_feature_do_not_use_with_context(self):
         self.client_context.feature('X')
 

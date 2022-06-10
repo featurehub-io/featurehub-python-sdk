@@ -319,9 +319,6 @@ class ClientContext:
     def build_sync(self) -> ClientContext:
         pass
 
-    async def close(self):
-        pass
-
 
 class ClientEvalFeatureContext(ClientContext):
     _edge: EdgeService
@@ -338,9 +335,6 @@ class ClientEvalFeatureContext(ClientContext):
         # assumes you have already dont an init yourself and the repository is up and going, you should
         # use this on your server instances
         return self
-
-    async def close(self):
-        self._edge.close()
 
     def feature(self, name: str) -> FeatureState:
         return self._repository.feature(name).with_context(self)
@@ -378,8 +372,3 @@ class ServerEvalFeatureContext(ClientContext):
         asyncio.run(self.build())
         return self
 
-    async def close(self):
-        if self._current_edge:
-            self._current_edge.close()
-            self._current_edge = None
-            self._old_header = None
