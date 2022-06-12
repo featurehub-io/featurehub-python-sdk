@@ -75,7 +75,7 @@ class ClientContextTest(TestCase):
                           .get_attr(ClientContext.PLATFORM), StrategyAttributePlatformName.Android)
         self.assertEqual(self.client_context.version("1.0-RC7").get_attr(ClientContext.VERSION), "1.0-RC7")
         self.assertEqual(self.client_context.attribute_values('warehouse_id', ['city', 'smaller-city'])
-                          .get_attr('warehouse_id'), ['city', 'smaller-city'])
+                          .get_attr('warehouse_id'), 'city')
         self.assertEqual(self.client_context.default_percentage_key, 'mary')
         self.assertEqual(self.client_context.clear().get_attr(ClientContext.USER_KEY), None)
         self.assertEqual(self.client_context.user_key('fred').get_attr(ClientContext.USER_KEY), 'fred')

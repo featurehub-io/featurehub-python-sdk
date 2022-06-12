@@ -243,27 +243,27 @@ class ClientContext:
         self._attributes = {}
 
     def user_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.USER_KEY] = value
+        self._attributes[ClientContext.USER_KEY] = [value]
         return self
 
     def session_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.SESSION] = value
+        self._attributes[ClientContext.SESSION] = [value]
         return self
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
-        self._attributes[ClientContext.COUNTRY] = value
+        self._attributes[ClientContext.COUNTRY] = [value]
         return self
 
     def device(self, value: StrategyAttributeDeviceName) -> ClientContext:
-        self._attributes[ClientContext.DEVICE] = value
+        self._attributes[ClientContext.DEVICE] = [value]
         return self
 
     def platform(self, value: StrategyAttributePlatformName) -> ClientContext:
-        self._attributes[ClientContext.PLATFORM] = value
+        self._attributes[ClientContext.PLATFORM] = [value]
         return self
 
     def version(self, version: str) -> ClientContext:
-        self._attributes[ClientContext.VERSION] = version
+        self._attributes[ClientContext.VERSION] = [version]
         return self
 
     def attribute_values(self, key: str, values: list[str]) -> ClientContext:
@@ -276,13 +276,16 @@ class ClientContext:
 
     def get_attr(self, key: str, default_value: Optional[str] = None) -> Optional[object]:
         if key in self._attributes:
-            return self._attributes.get(key)
+            return self._attributes.get(key)[0]
+
         return default_value
 
     @property
     def default_percentage_key(self) -> str:
-        return self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
-            else str(self.get_attr(ClientContext.USER_KEY))
+        val = self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
+            else self.get_attr(ClientContext.USER_KEY)
+
+        return str(val) if val is not None else None
 
     def is_enabled(self, name: str) -> bool:
         return self.feature(name).is_enabled

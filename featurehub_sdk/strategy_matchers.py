@@ -84,6 +84,7 @@ class StringMatcher(StrategyMatcher):
 
         return False
 
+
 # we are not doing Date or DateTime matcher but treating those as plain strings
 
 
@@ -99,7 +100,7 @@ class NumberMatcher(StrategyMatcher):
                 return next(filter(lambda x: supplied_value.startswith(x), attr.str_values), None) is not None
             elif attr.conditional == RolloutStrategyAttributeConditional.Regex:
                 return next(filter(lambda x: re.search(x, supplied_value), attr.str_values), None) is not None
-            else: # the rest we treat as floats
+            else:  # the rest we treat as floats
                 vals = attr.float_values
 
                 # match was only introduced in python 3.10 so...
@@ -128,10 +129,10 @@ class SemanticVersionMatcher(StrategyMatcher):
         vals = attr.str_values
 
         if attr.conditional == RolloutStrategyAttributeConditional.Includes \
-            or attr.conditional == RolloutStrategyAttributeConditional.Equals:
+                or attr.conditional == RolloutStrategyAttributeConditional.Equals:
             return next(filter(lambda x: cmp(supplied_value, "==", x, True), vals), None) is not None
         elif attr.conditional == RolloutStrategyAttributeConditional.Excludes \
-            or attr.conditional == RolloutStrategyAttributeConditional.NotEquals:
+                or attr.conditional == RolloutStrategyAttributeConditional.NotEquals:
             return next(filter(lambda x: cmp(supplied_value, "==", x, True), vals), None) is None
         elif attr.conditional == RolloutStrategyAttributeConditional.Greater:
             return next(filter(lambda x: cmp(supplied_value, ">", x, True), vals), None) is not None
@@ -212,7 +213,8 @@ class ApplyFeature:
 
                 if percentage is None or new_percentage_key != percentage_key:
                     percentage_key = new_percentage_key
-                    percentage = self._percentageCalculator.determine_client_percentage(percentage_key, feature_value_id)
+                    percentage = self._percentageCalculator.determine_client_percentage(percentage_key,
+                                                                                        feature_value_id)
 
                     use_base_percentage = 0 if rsi.has_attributes else base_percentage_val
 
@@ -257,7 +259,5 @@ class ApplyFeature:
         if not rs.has_percentage_attributes:
             return context.default_percentage_key
 
-        return "$".join(map(lambda x:
-                            context.get_attr(x, '<none>')[0] if isinstance(context.get_attr(x, '<none>'), list)
-                            else context.get_attr(x, '<none>'), rs.percentage_attributes))
-
+        return "$".join(list(map(lambda x:
+                                 str(context.get_attr(x, '<none>')), rs.percentage_attributes)))
