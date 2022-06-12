@@ -17,7 +17,7 @@ class PercentageCalculator:
         pass
 
 
-class Murmur3PercentageCalculator:
+class Murmur3PercentageCalculator(PercentageCalculator):
     MAX_PERCENTAGE = 1000000
     SEED = 0
 
@@ -218,20 +218,15 @@ class ApplyFeature:
 
                     # if the percentage is lower than the user's key/feature-id then apply it
                     if percentage <= (use_base_percentage + rsi.percentage):
-                        if rsi.has_attributes:
-                            if self.match_attribute(context, rsi):
-                                return Applied(True, rsi.value)
-                        else:
+                        if (not rsi.has_attributes) or (rsi.has_attributes and self.match_attribute(context, rsi)):
                             return Applied(True, rsi.value)
 
                     if not rsi.has_attributes:
                         base_percentage[percentage_key] = base_percentage.get(percentage_key) + rsi.percentage
 
             if rsi.percentage == 0 and rsi.has_attributes and self.match_attribute(context, rsi):
-                print('matched here')
                 return Applied(True, rsi.value)
 
-        print('here')
         return Applied(False, None)
 
     def match_attribute(self, context: ClientContext, rs: RolloutStrategy) -> bool:

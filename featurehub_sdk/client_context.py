@@ -141,12 +141,15 @@ class RolloutStrategyAttribute:
 class RolloutStrategy:
     _attr: dict
     _attributes: list[RolloutStrategyAttribute]
+    _has_attributes: bool
 
     def __init__(self, attr: dict):
         self._attr = attr
 
         rsa = self._attr.get('attributes')
         self._attributes = list(map(lambda x: RolloutStrategyAttribute(x), list(rsa))) if rsa else []
+        # this is calculated a lot, so cache it
+        self._has_attributes = len(self._attributes) > 0
 
     @property
     def id(self) -> Optional[str]:
@@ -182,7 +185,7 @@ class RolloutStrategy:
 
     @property
     def has_attributes(self) -> bool:
-        return len(self._attributes) > 0
+        return self._has_attributes
 
 class Applied:
     _matched: bool

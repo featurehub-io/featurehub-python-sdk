@@ -40,7 +40,7 @@ class PollingEdgeService(EdgeService):
         self._interval = interval
         old_cancel = self._cancel
         self._cancel = False
-        if not old_cancel:
+        if old_cancel:  # if we had cancelled, start polling again
             self.poll_with_interval()
 
     # this does the business, calls the remote service and gets the features back
