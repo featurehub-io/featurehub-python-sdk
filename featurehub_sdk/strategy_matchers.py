@@ -233,14 +233,14 @@ class ApplyFeature:
 
     def match_attribute(self, context: ClientContext, rs: RolloutStrategy) -> bool:
         for attr in rs.attributes:
-            supplied_value = context.get_attr(attr.field_name, None)
+            supplied_value = context.get_attr(attr.field_name)
             if supplied_value is None and attr.field_name.lower() == 'now':
                 if attr.field_type == RolloutStrategyFieldType.Date:
                     supplied_value = datetime.datetime.utcnow().isoformat()[0:10]
                 elif attr.field_type == RolloutStrategyFieldType.Datetime:
                     supplied_value = datetime.datetime.utcnow().isoformat()
 
-            if attr.values is None or supplied_value is None:
+            if attr.values is None and supplied_value is None:
                 if attr.conditional != RolloutStrategyAttributeConditional.Equals:
                     return False
 
