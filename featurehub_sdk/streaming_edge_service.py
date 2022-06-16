@@ -43,7 +43,6 @@ class _StreamingThread(threading.Thread):
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
                         last_event_id = event.id
-                        print("data is " + event.event, event.data)
                         log.log(5, "received data %s: %s", event.event, event.data)
                         self._repository.notify(event.event, self._check_data(event.data))
                         if self._cancel:

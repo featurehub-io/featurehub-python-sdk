@@ -1,6 +1,7 @@
 
 
 import unittest
+import json
 from unittest import TestCase
 from unittest.mock import MagicMock
 
@@ -142,6 +143,38 @@ class FeatureStateHolderTest(TestCase):
         self.assertTrue(fh_ctx.get_value)
 
         self.assertEqual(fh.key, key)
+
+    def test_raw_full_feature(self):
+        data = '''{
+        "id": "227dc2e8-59e8-424a-b510-328ef52010f7",
+        "key": "SUBMIT_COLOR_BUTTON",
+        "l": true,
+        "version": 28,
+        "type": "STRING",
+        "value": "orange",
+        "strategies": [
+          {
+            "id": "7000b097-3fcb-4cfb-bd7c-be1640fe0503",
+            "value": "green",
+            "attributes": [
+              {
+                "conditional": "EQUALS",
+                "fieldName": "country",
+                "values": [
+                  "australia"
+                ],
+                "type": "STRING"
+              }
+            ]
+          }
+        ]
+      }'''
+        json_data = json.loads(data)
+        fh = FeatureStateHolder('SUBMIT_COLOR_BUTTON', self._repo)
+        fh.set_feature_state(json_data)
+        self.assertTrue(fh.locked)
+        self.assertEqual(fh.get_string, "orange")
+
 
 if __name__ == '__main__':
     unittest.main()

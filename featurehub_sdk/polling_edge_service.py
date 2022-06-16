@@ -50,8 +50,7 @@ class PollingEdgeService(EdgeService):
         log.log(5, "polling ", url)
         resp = self._http.request(method='GET', url=url, headers={'X-SDK': 'Python', 'X-SDK-Version': sdk_version})
         log.log(5, "polling status", resp.status)
-        x = resp.status
-        print(f"polling status {resp}")
+
         if resp.status == 200:
             self._process_successful_results(json.loads(resp.data.decode('utf-8')))
         elif resp.status == 404: # no such key
