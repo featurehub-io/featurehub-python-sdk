@@ -6,6 +6,7 @@ import logging
 import sys
 import json
 import asyncio
+from typing import List
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
@@ -21,7 +22,7 @@ class PollingEdgeService(EdgeService):
     _client_eval: bool
     _http: urllib3.PoolManager
 
-    def __init__(self, edge_url: str, api_keys: list[str],
+    def __init__(self, edge_url: str, api_keys: List[str],
                  repository: FeatureHubRepository,
                  interval: int):
         self._interval = interval
@@ -40,7 +41,7 @@ class PollingEdgeService(EdgeService):
         self._interval = interval
         old_cancel = self._cancel
         self._cancel = False
-        if not old_cancel:
+        if old_cancel:  # if we had cancelled, start polling again
             self.poll_with_interval()
 
     # this does the business, calls the remote service and gets the features back
@@ -50,8 +51,7 @@ class PollingEdgeService(EdgeService):
         log.log(5, "polling ", url)
         resp = self._http.request(method='GET', url=url, headers={'X-SDK': 'Python', 'X-SDK-Version': sdk_version})
         log.log(5, "polling status", resp.status)
-        x = resp.status
-        print(f"polling status {resp}")
+
         if resp.status == 200:
             self._process_successful_results(json.loads(resp.data.decode('utf-8')))
         elif resp.status == 404: # no such key

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List
 import json
 import urllib.parse
 import asyncio
@@ -122,15 +122,15 @@ class RolloutStrategyAttribute:
         return self._attr.get('fieldName')
 
     @property
-    def values(self) -> Optional[list[Any]]:
+    def values(self) -> Optional[List[Any]]:
         return self._attr.get('values')
 
     @property
-    def float_values(self) -> list[float]:
+    def float_values(self) -> List[float]:
         return list(map(lambda x: float(x), filter(lambda x: x is not None, self.values)))
 
     @property
-    def str_values(self) -> list[str]:
+    def str_values(self) -> List[str]:
         return list(map(lambda x: str(x), filter(lambda x: x is not None, self.values)))
 
     @property
@@ -140,13 +140,16 @@ class RolloutStrategyAttribute:
 
 class RolloutStrategy:
     _attr: dict
-    _attributes: list[RolloutStrategyAttribute]
+    _attributes: List[RolloutStrategyAttribute]
+    _has_attributes: bool
 
     def __init__(self, attr: dict):
         self._attr = attr
 
         rsa = self._attr.get('attributes')
         self._attributes = list(map(lambda x: RolloutStrategyAttribute(x), list(rsa))) if rsa else []
+        # this is calculated a lot, so cache it
+        self._has_attributes = len(self._attributes) > 0
 
     @property
     def id(self) -> Optional[str]:
@@ -162,7 +165,7 @@ class RolloutStrategy:
         return int(p) if p is not None else 0
 
     @property
-    def percentage_attributes(self) -> list[str]:
+    def percentage_attributes(self) -> List[str]:
         pa = self._attr.get('percentageAttributes')
 
         return list(pa) if pa is not None else []
@@ -177,12 +180,12 @@ class RolloutStrategy:
         return self._attr.get('value')
 
     @property
-    def attributes(self) -> list[RolloutStrategyAttribute]:
+    def attributes(self) -> List[RolloutStrategyAttribute]:
         return self._attributes
 
     @property
     def has_attributes(self) -> bool:
-        return len(self._attributes) > 0
+        return self._has_attributes
 
 class Applied:
     _matched: bool
@@ -218,7 +221,7 @@ class InternalFeatureRepository:
     def not_ready(self) -> bool:
         pass
 
-    def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
+    def apply(self, strategies: List[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
         pass
 
     def notify(self, cmd: str, data):
@@ -226,7 +229,7 @@ class InternalFeatureRepository:
 
 class ClientContext:
     """holds client context"""
-    _attributes: dict[str, object]
+    _attributes: Dict[str, object]
     _repo: InternalFeatureRepository
     USER_KEY = 'userkey'
     SESSION = 'session'
@@ -240,30 +243,30 @@ class ClientContext:
         self._attributes = {}
 
     def user_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.USER_KEY] = value
+        self._attributes[ClientContext.USER_KEY] = [value]
         return self
 
     def session_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.SESSION] = value
+        self._attributes[ClientContext.SESSION] = [value]
         return self
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
-        self._attributes[ClientContext.COUNTRY] = value
+        self._attributes[ClientContext.COUNTRY] = [value]
         return self
 
     def device(self, value: StrategyAttributeDeviceName) -> ClientContext:
-        self._attributes[ClientContext.DEVICE] = value
+        self._attributes[ClientContext.DEVICE] = [value]
         return self
 
     def platform(self, value: StrategyAttributePlatformName) -> ClientContext:
-        self._attributes[ClientContext.PLATFORM] = value
+        self._attributes[ClientContext.PLATFORM] = [value]
         return self
 
     def version(self, version: str) -> ClientContext:
-        self._attributes[ClientContext.VERSION] = version
+        self._attributes[ClientContext.VERSION] = [version]
         return self
 
-    def attribute_values(self, key: str, values: list[str]) -> ClientContext:
+    def attribute_values(self, key: str, values: List[str]) -> ClientContext:
         self._attributes[key] = values
         return self
 
@@ -273,13 +276,16 @@ class ClientContext:
 
     def get_attr(self, key: str, default_value: Optional[str] = None) -> Optional[object]:
         if key in self._attributes:
-            return self._attributes.get(key)
+            return self._attributes.get(key)[0]
+
         return default_value
 
     @property
     def default_percentage_key(self) -> str:
-        return self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
-            else str(self.get_attr(ClientContext.USER_KEY))
+        val = self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
+            else self.get_attr(ClientContext.USER_KEY)
+
+        return str(val) if val is not None else None
 
     def is_enabled(self, name: str) -> bool:
         return self.feature(name).is_enabled
@@ -310,13 +316,13 @@ class ClientContext:
     def get_boolean(self, name: str) -> Optional[bool]:
         return self.feature(name).get_boolean
 
+    def exists(self, name: str) -> bool:
+        return self.feature(name).exists
+
     async def build(self) -> ClientContext:
         pass
 
     def build_sync(self) -> ClientContext:
-        pass
-
-    async def close(self):
         pass
 
 
@@ -335,9 +341,6 @@ class ClientEvalFeatureContext(ClientContext):
         # assumes you have already dont an init yourself and the repository is up and going, you should
         # use this on your server instances
         return self
-
-    async def close(self):
-        self._edge.close()
 
     def feature(self, name: str) -> FeatureState:
         return self._repository.feature(name).with_context(self)
@@ -375,8 +378,3 @@ class ServerEvalFeatureContext(ClientContext):
         asyncio.run(self.build())
         return self
 
-    async def close(self):
-        if self._current_edge:
-            self._current_edge.close()
-            self._current_edge = None
-            self._old_header = None

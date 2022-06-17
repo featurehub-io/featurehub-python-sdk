@@ -1,2 +1,5 @@
-Flask[async]==2.1.2
+Flask[async]==2.0.3
 flask-cors==3.0.10
+git+https://github.com/featurehub-io/featurehub-python-sdk@refinements-1#egg=featurehub-sdk
+
+

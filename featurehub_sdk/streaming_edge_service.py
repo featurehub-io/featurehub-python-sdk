@@ -1,4 +1,5 @@
 from typing import Optional
+from typing import List
 
 import sseclient
 import urllib3
@@ -21,7 +22,7 @@ class _StreamingThread(threading.Thread):
     _repository: InternalFeatureRepository
     _url: str
 
-    def __init__(self, edge_url: str, api_keys: list[str],
+    def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository):
         super().__init__(daemon=True, name="streaming-featurehub")
         self._url = f"{edge_url}/features/{api_keys[0]}"
@@ -43,7 +44,6 @@ class _StreamingThread(threading.Thread):
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
                         last_event_id = event.id
-                        print("data is " + event.event, event.data)
                         log.log(5, "received data %s: %s", event.event, event.data)
                         self._repository.notify(event.event, self._check_data(event.data))
                         if self._cancel:
@@ -72,7 +72,7 @@ class StreamingEdgeClient(EdgeService):
     _client_evaluated: bool
     _streaming_thread: _StreamingThread
 
-    def __init__(self, edge_url: str, api_keys: list[str],
+    def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository):
         self._streaming_thread = _StreamingThread(edge_url, api_keys, repository)
 

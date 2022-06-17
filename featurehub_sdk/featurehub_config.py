@@ -1,4 +1,4 @@
-from __future__ import annotations
+from __future__ import annotations  # so we can reference ourselves
 
 import typing
 import os
@@ -8,24 +8,24 @@ from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContex
     InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
-from collections.abc import Callable
-
+from typing import List, Callable
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
 
 log = logging.getLogger(sys.modules[__name__].__name__)
 
+
 class FeatureHubConfig:
-    _api_keys: list[str]
+    _api_keys: List[str]
     _edge_url: str
     _client_eval: bool
     _repository: InternalFeatureRepository
     _edge_service: typing.Optional[EdgeService]
-    _edge_service_provider: Callable[[InternalFeatureRepository, list[str], str], EdgeService]
+    _edge_service_provider: Callable[[InternalFeatureRepository, List[str], str], EdgeService]
 
-    def __init__(self, edge_url, api_keys: list[str],
+    def __init__(self, edge_url, api_keys: List[str],
                  repository: typing.Optional[InternalFeatureRepository] = None,
-                 edge_provider: typing.Optional[Callable[[InternalFeatureRepository, list[str], str], EdgeService]] = None):
+                 edge_provider: typing.Optional[Callable[[InternalFeatureRepository, List[str], str], EdgeService]] = None):
         self._edge_service = None
         self._repository = repository if repository is not None else FeatureHubRepository()
         self._edge_url = edge_url
@@ -50,7 +50,7 @@ class FeatureHubConfig:
     def client_evaluated(self) -> bool:
         return self._client_eval  # is this correct?
 
-    def get_api_keys(self) -> list[str]:
+    def get_api_keys(self) -> List[str]:
         return self._api_keys.copy()
 
     def get_host(self) -> str:
@@ -90,8 +90,8 @@ class FeatureHubConfig:
     # a different provider or a customised provider creation
     def edge_service_provider(self,
                               edge_provider:
-                              typing.Optional[Callable[[InternalFeatureRepository, list[str], str], EdgeService]] = None) \
-            -> Callable[[InternalFeatureRepository, list[str], str], EdgeService]:
+                              typing.Optional[Callable[[InternalFeatureRepository, List[str], str], EdgeService]] = None) \
+            -> Callable[[InternalFeatureRepository, List[str], str], EdgeService]:
         # did the give us a new one? if not, return the default one we created on init
         if edge_provider is None:
             return self._edge_service_provider
@@ -107,7 +107,7 @@ class FeatureHubConfig:
 
     # this is just an internal function that creates the default edge service if the user hasn't provided one (which
     # will be 90% of the time)
-    def _create_default_provider(self, repository: InternalFeatureRepository, api_keys: list[str],
+    def _create_default_provider(self, repository: InternalFeatureRepository, api_keys: List[str],
                                  edge_url: str) -> EdgeService:
 
         return StreamingEdgeClient(edge_url, api_keys, repository)

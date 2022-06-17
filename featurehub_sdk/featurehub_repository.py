@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, List, Dict
 
 from featurehub_sdk.client_context import InternalFeatureRepository, ClientContext, Applied, RolloutStrategy
 from featurehub_sdk.fh_state_base_holder import FeatureStateHolder
@@ -7,9 +7,9 @@ from featurehub_sdk.strategy_matchers import ApplyFeature
 
 
 class FeatureHubRepository(InternalFeatureRepository):
-    features: dict[str, FeatureStateHolder] # do we need this to be private and expose it as a getter method?
+    features: Dict[str, FeatureStateHolder] # do we need this to be private and expose it as a getter method?
     _ready: bool = False
-    _interceptors: list[ValueInterceptor]
+    _interceptors: List[ValueInterceptor]
     _strategy_matcher: ApplyFeature
 
     def __init__(self, apply_features: Optional[ApplyFeature] = None):
@@ -17,7 +17,7 @@ class FeatureHubRepository(InternalFeatureRepository):
         self._interceptors = []
         self.features = {}
 
-    def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: ClientContext) -> Applied:
+    def apply(self, strategies: List[RolloutStrategy], key: str, feature_id: str, context: ClientContext) -> Applied:
         return self._strategy_matcher.apply(strategies, key, feature_id, context)
 
     def notify(self, status: str, data: Optional):
@@ -42,7 +42,7 @@ class FeatureHubRepository(InternalFeatureRepository):
         if feat:
             feat.set_feature_state(None)
 
-    def __update_features(self, data: list[dict]):
+    def __update_features(self, data: List[dict]):
         if data:
             for feature_state in data:
                 self.__update_feature_state(feature_state)
