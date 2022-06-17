@@ -14,17 +14,18 @@ from featurehub_sdk.client_context import ClientContext, FeatureState, InternalF
 #   only a reference to the parent holder, that means as new data comes in, the context needs to always refer to the
 #   current state, we have no way of searching for all of the instances of context/features and updating them.
 from featurehub_sdk.interceptors import InterceptorValue
+from typing import List
 
 
 class FeatureStateHolder(FeatureState):
     """Holder for features. Wraps raw response with features dictionary"""
 
     _key: Optional[str]
-    _internal_feature_state = None
+    _internal_feature_state: Optional[dict]
     _parent_state: "FeatureStateHolder"
     _ctx: ClientContext
     _repo: InternalFeatureRepository
-    _encoded_strategies: list[RolloutStrategy]
+    _encoded_strategies: List[RolloutStrategy]
 
     # we can be initialised with no state when someone request a key that does not exist
     # the parent exists so we can keep track of the original feature when we use contexts
@@ -41,6 +42,7 @@ class FeatureStateHolder(FeatureState):
         self._ctx = ctx
         self._repo = repo
         self._encoded_strategies = []
+        self._internal_feature_state = None
 
         if feature_state:
             self.__set_feature_state(feature_state)

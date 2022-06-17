@@ -3,6 +3,8 @@
 ## Overview
 To control the feature flags from the FeatureHub Admin console, either use our [demo](https://demo.featurehub.io) version for evaluation or install the app using our guide [here](https://docs.featurehub.io/featurehub/latest/installation.html)
 
+Versions 3.7+ of Python are supported.
+
 ## SDK installation
 
 `pip install featurehub-sdk`

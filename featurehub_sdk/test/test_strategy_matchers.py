@@ -1,6 +1,5 @@
-from typing import Any, Optional
+from typing import Any, Optional, List
 from unittest import TestCase
-
 from featurehub_sdk.strategy_matchers import MatcherRegistry
 from featurehub_sdk.client_context import RolloutStrategyFieldType, RolloutStrategyAttributeConditional, \
     RolloutStrategyAttribute
@@ -13,7 +12,7 @@ class StrategyMatcherTest(TestCase):
     def setUp(self) -> None:
         self.matcher = MatcherRegistry()
 
-    def equals(self, condition: RolloutStrategyAttributeConditional, vals: list[Any],
+    def equals(self, condition: RolloutStrategyAttributeConditional, vals: List[Any],
                suppplied_val: Optional[str], matches: bool):
         rsa = RolloutStrategyAttribute({
             'conditional': condition,

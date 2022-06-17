@@ -6,6 +6,7 @@ import logging
 import sys
 import json
 import asyncio
+from typing import List
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
@@ -21,7 +22,7 @@ class PollingEdgeService(EdgeService):
     _client_eval: bool
     _http: urllib3.PoolManager
 
-    def __init__(self, edge_url: str, api_keys: list[str],
+    def __init__(self, edge_url: str, api_keys: List[str],
                  repository: FeatureHubRepository,
                  interval: int):
         self._interval = interval

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Any
+from typing import Optional, Any, Dict, List
 import json
 import urllib.parse
 import asyncio
@@ -122,15 +122,15 @@ class RolloutStrategyAttribute:
         return self._attr.get('fieldName')
 
     @property
-    def values(self) -> Optional[list[Any]]:
+    def values(self) -> Optional[List[Any]]:
         return self._attr.get('values')
 
     @property
-    def float_values(self) -> list[float]:
+    def float_values(self) -> List[float]:
         return list(map(lambda x: float(x), filter(lambda x: x is not None, self.values)))
 
     @property
-    def str_values(self) -> list[str]:
+    def str_values(self) -> List[str]:
         return list(map(lambda x: str(x), filter(lambda x: x is not None, self.values)))
 
     @property
@@ -140,7 +140,7 @@ class RolloutStrategyAttribute:
 
 class RolloutStrategy:
     _attr: dict
-    _attributes: list[RolloutStrategyAttribute]
+    _attributes: List[RolloutStrategyAttribute]
     _has_attributes: bool
 
     def __init__(self, attr: dict):
@@ -165,7 +165,7 @@ class RolloutStrategy:
         return int(p) if p is not None else 0
 
     @property
-    def percentage_attributes(self) -> list[str]:
+    def percentage_attributes(self) -> List[str]:
         pa = self._attr.get('percentageAttributes')
 
         return list(pa) if pa is not None else []
@@ -180,7 +180,7 @@ class RolloutStrategy:
         return self._attr.get('value')
 
     @property
-    def attributes(self) -> list[RolloutStrategyAttribute]:
+    def attributes(self) -> List[RolloutStrategyAttribute]:
         return self._attributes
 
     @property
@@ -221,7 +221,7 @@ class InternalFeatureRepository:
     def not_ready(self) -> bool:
         pass
 
-    def apply(self, strategies: list[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
+    def apply(self, strategies: List[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
         pass
 
     def notify(self, cmd: str, data):
@@ -229,7 +229,7 @@ class InternalFeatureRepository:
 
 class ClientContext:
     """holds client context"""
-    _attributes: dict[str, object]
+    _attributes: Dict[str, object]
     _repo: InternalFeatureRepository
     USER_KEY = 'userkey'
     SESSION = 'session'
@@ -266,7 +266,7 @@ class ClientContext:
         self._attributes[ClientContext.VERSION] = [version]
         return self
 
-    def attribute_values(self, key: str, values: list[str]) -> ClientContext:
+    def attribute_values(self, key: str, values: List[str]) -> ClientContext:
         self._attributes[key] = values
         return self
 

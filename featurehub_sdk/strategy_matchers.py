@@ -1,6 +1,5 @@
 import datetime
-from typing import Optional
-
+from typing import Optional, List, Dict
 import re
 
 from semver import cmp
@@ -191,14 +190,14 @@ class ApplyFeature:
             else Murmur3PercentageCalculator()
         self._matcherRepository = matcher_repository if matcher_repository is not None else MatcherRegistry()
 
-    def apply(self, strategies: list[RolloutStrategy], key: str, feature_value_id: str,
+    def apply(self, strategies: List[RolloutStrategy], key: str, feature_value_id: str,
               context: ClientContext) -> Applied:
         if context is None or strategies is None or len(strategies) == 0:
             return Applied(False, None)
 
         percentage: Optional[float] = None
         percentage_key: Optional[str] = None
-        base_percentage: dict[str, float] = {}
+        base_percentage: Dict[str, float] = {}
         default_percentage_key = context.default_percentage_key
 
         for rsi in strategies:
