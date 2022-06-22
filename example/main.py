@@ -6,16 +6,18 @@ See also https://www.python-boilerplate.com/flask
 """
 import os
 import asyncio
-from flask import Flask, jsonify, abort, request
+from typing import List
+
+from flask import Flask, jsonify, abort, request, Response
 from flask_cors import CORS
 
+from featurehub_sdk.client_context import ClientContext
 from featurehub_sdk.featurehub_config import FeatureHubConfig
-import config as cnf
-from featurehub_sdk.polling_edge_service import PollingEdgeService
 
 app = None
 
 users = dict()
+config: FeatureHubConfig = None
 
 class Todo:
     def __init__(self, todo_id, title, resolved):
@@ -26,6 +28,10 @@ class Todo:
     def __str__(self):
         return f"{self.todo_id} {self.title} {self.resolved}"
 
+    def to_dict(self):
+        return {'id': self.todo_id,
+                'title': self.title,
+                'resolved': self.resolved}
 
 def create_app(config=None):
     app = Flask(__name__)
@@ -38,31 +44,26 @@ def create_app(config=None):
     # https://flask-cors.readthedocs.io/en/latest/
     CORS(app)
 
+    # Create FeatureHub configuration
+    edge_url = "http://localhost:8085" # cnf.edge_url
+    client_eval_key = 'default/845717ab-357e-4ce6-953c-2cb139974f2d/Zmv6OWy9K76IqnfeglTwSJoHbAAqhf*rjXljuNvAtoPVM4tpPIn'  # cnf.client_eval_key
+    # edge_url = "https://zjbisc.demo.featurehub.io" # cnf.edge_url
+    # client_eval_key = "default/9b71f803-da79-4c04-8081-e5c0176dda87/CtVlmUHirgPd9Qz92Y0IQauUMUv3Wb*4dacoo47oYp6hSFFjVkG" # cnf.client_eval_key
+
+    fh_config = FeatureHubConfig(edge_url, [client_eval_key])
+    # to use polling
+    # fh_config.use_polling_edge_service()
+    # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
+
+    print("starting featurehub")
+    asyncio.run(fh_config.init())
+
     # Definition of the routes. Put them into their own file. See also
     # Flask Blueprints: http://flask.pocoo.org/docs/latest/blueprints
 
-    # Create FeatureHub configuration
-    edge_url = "https://zjbisc.demo.featurehub.io" # cnf.edge_url
-    client_eval_key = "default/9b71f803-da79-4c04-8081-e5c0176dda87/CtVlmUHirgPd9Qz92Y0IQauUMUv3Wb*4dacoo47oYp6hSFFjVkG" # cnf.client_eval_key
-
-    config = FeatureHubConfig(edge_url, [client_eval_key])
-    # to use polling
-    # config.use_polling_edge_service()
-    # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
-
-    asyncio.run(config.init())
-    fh = config.repository()
-
-    @app.route("/")
-    def hello_world():
-        if fh.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
-            return "HELLO WORLD"
-        else:
-            return "hello world"
-
     @app.route("/async-name/<name>")
     async def async_name_arg(name):
-        ctx = await config.new_context().user_key(name).build()
+        ctx = await fh_config.new_context().user_key(name).build()
         if ctx.feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
             return "HELLO WORLD"
         else:
@@ -70,7 +71,7 @@ def create_app(config=None):
 
     @app.route("/name/<name>")
     def name_arg(name):
-        if config.new_context().user_key(name).build_sync().feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
+        if fh_config.new_context().user_key(name).build_sync().feature('FEATURE_TITLE_TO_UPPERCASE').get_flag:
             return "HELLO WORLD"
         else:
             return "hello world"
@@ -80,18 +81,26 @@ def create_app(config=None):
     def foo_url_arg(someId):
         return jsonify({"echo": someId})
 
-    # @app.route("/health/readiness")
-    # def check_fh_readiness():
-    #     if fh.is_ready():
-    #         return "FeatureHub server is ready"
-    #     else:
-    #         return abort(503, 'FeatureHub server is not ready')
-
     # /todo/:user/:id/resolve
     @app.route("/todo/<user>/<id>/resolve", methods = ["PUT"])
     def resolve_to(user, id):
-        print(user, id)
-        return 'wat'
+        for todo in user_todos(user):
+            if todo.todo_id == id:
+                todo.resolved = True
+                return todo_list(user), 200
+
+        return "", 404
+
+    # delete: /todo/:user/:id
+    @app.route("/todo/<user>/<id>", methods = ["DELETE"])
+    def delete_todo(user, id):
+        todos = user_todos(user)
+        for todo in todos:
+            if todo.todo_id == id:
+                todos.remove(todo)
+                return todo_list(user), 200
+
+        return "", 404
 
     # # /delete('/todo/:user/:id')
     # @app.route("/todo/<user>/<id>/resolve", methods = ["DELETE"])
@@ -103,9 +112,11 @@ def create_app(config=None):
     @app.route("/todo/<user>", methods = ["DELETE"])
     def delete_user(user):
         if user in users:
-            users.pop(user)
+            del users[user]
 
         return "", 204
+
+        # return "", 404
 
     # post('/todo/:user')
     @app.route("/todo/<user>", methods = ["POST"])
@@ -118,35 +129,56 @@ def create_app(config=None):
 
         todos = user_todos(user)
         print(todos)
-        todos.append(Todo(data["id"], data["title"], data["resolved"]))
+        todos.append(Todo(data["id"], data["title"], data.get("resolved") or False ))
         print(todos)
 
-    # # get('/todo/:user')
-    # @app.route("/todo/<user>/<id>/resolve", methods = ["GET"])
-    # def resolve_to(user, id):
-    #     print(user, id)
-    #     return 'wat'
+        return todo_list(user), 201
 
-    # get( "/health/readiness")
     @app.route("/health/readiness", methods = ["GET"])
     def get_health_check():
-        if config.repository().is_ready():
+        if fh_config.repository().is_ready():
             return "OK"
 
         return "", 500
 
-    def user_todos(user):
-        todos = users.get(user, [])
-        return todos
+    def user_todos(user) -> List[Todo]:
+        return users.setdefault(user, [])
 
-    def todo_list(user):
-        ctx = config.
+    def process_title(ctx: ClientContext, title: str) -> str:
+        new_title = title
+
+        if ctx.is_set("FEATURE_STRING") and title == "buy":
+            new_title = f"{title} {ctx.get_string('FEATURE_STRING')}"
+
+        if ctx.is_set("FEATURE_NUMBER") and title == 'pay':
+            new_title = f"{title} {ctx.get_number('FEATURE_NUMBER')}"
+
+        if ctx.is_set('FEATURE_JSON') and title == 'find':
+            new_title = f"{title} {ctx.get_json('FEATURE_JSON')['foo']}"
+
+        if ctx.is_enabled('FEATURE_TITLE_TO_UPPERCASE'):
+            new_title = new_title.upper()
+
+        return new_title
+
+    def todo_list(user: str) -> Response:
+        ctx = fh_config.new_context().user_key(user).build_sync()
+        todos = user_todos(user)
+        new_todos = []
+
+        for todo in todos:
+            new_todos.append(Todo(todo.todo_id, process_title(ctx, todo.title), todo.resolved).to_dict())
+
+        return jsonify(new_todos)
+
+    @app.route("/todo/<user>", methods = ["GET"])
+    def get_list(user):
+        return todo_list(user), 200
 
     return app
 
-
 if __name__ == "__main__":
     if app is None:
-        port = int(os.environ.get("PORT", 8000))
+        port = int(os.environ.get("PORT", 8099))
         app = create_app()
         app.run(host="0.0.0.0", port=port, use_reloader=False)
