@@ -33,7 +33,7 @@ class PollingEdgeService(EdgeService):
         self._context = None
         self._http = urllib3.PoolManager()
 
-        self._url = f"{edge_url}/features?" + "&".join(map(lambda i: 'apiKey=' + i, api_keys))
+        self._url = f"{edge_url}features?" + "&".join(map(lambda i: 'apiKey=' + i, api_keys))
         log.debug(f"polling url {self._url}")
 
     # allow us to update the interval of the current polling edge service

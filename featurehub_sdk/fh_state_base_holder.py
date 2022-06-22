@@ -79,7 +79,7 @@ class FeatureStateHolder(FeatureState):
             if matched.matched:
                 return InterceptorValue(matched.value).cast(feature_type)
 
-        return fs._feature_state().get('value')
+        return state.get('value')
 
     def with_context(self, ctx: ClientContext) -> FeatureState:
         return FeatureStateHolder(self._key, self._repo, None, self, ctx)

@@ -25,7 +25,7 @@ class _StreamingThread(threading.Thread):
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository):
         super().__init__(daemon=True, name="streaming-featurehub")
-        self._url = f"{edge_url}/features/{api_keys[0]}"
+        self._url = f"{edge_url}features/{api_keys[0]}"
         self._repository = repository
         self._cancel = False
         self._http = urllib3.PoolManager()
