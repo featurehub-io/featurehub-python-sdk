@@ -1,0 +1,4 @@
+= Changelog
+
+* 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.
+* 0.0.2 - initial release

@@ -6,12 +6,14 @@ See also https://www.python-boilerplate.com/flask
 """
 import os
 import asyncio
+import logging.config
 from typing import List
 
 from flask import Flask, jsonify, abort, request, Response
 from flask_cors import CORS
 
 from featurehub_sdk.client_context import ClientContext
+from featurehub_sdk.version import sdk_version
 from featurehub_sdk.featurehub_config import FeatureHubConfig
 
 app = None
@@ -34,6 +36,8 @@ class Todo:
                 'resolved': self.resolved}
 
 def create_app(config=None):
+    logging.config.fileConfig('logging.conf')
+
     app = Flask(__name__)
 
     # See http://flask.pocoo.org/docs/latest/config/
@@ -44,15 +48,14 @@ def create_app(config=None):
     # https://flask-cors.readthedocs.io/en/latest/
     CORS(app)
 
+    print(f"Using featurehub version {sdk_version}")
     # Create FeatureHub configuration
-    edge_url = "http://localhost:8085" # cnf.edge_url
-    client_eval_key = 'default/845717ab-357e-4ce6-953c-2cb139974f2d/Zmv6OWy9K76IqnfeglTwSJoHbAAqhf*rjXljuNvAtoPVM4tpPIn'  # cnf.client_eval_key
-    # edge_url = "https://zjbisc.demo.featurehub.io" # cnf.edge_url
-    # client_eval_key = "default/9b71f803-da79-4c04-8081-e5c0176dda87/CtVlmUHirgPd9Qz92Y0IQauUMUv3Wb*4dacoo47oYp6hSFFjVkG" # cnf.client_eval_key
+    edge_url = os.environ.get("FEATUREHUB_EDGE_URL", "http://localhost:8085") # cnf.edge_url
+    client_eval_key = os.environ.get("FEATUREHUB_CLIENT_API_KEY", "default/845717ab-357e-4ce6-953c-2cb139974f2d/Zmv6OWy9K76IqnfeglTwSJoHbAAqhf*rjXljuNvAtoPVM4tpPIn")  # cnf.client_eval_key
 
     fh_config = FeatureHubConfig(edge_url, [client_eval_key])
     # to use polling
-    # fh_config.use_polling_edge_service()
+    fh_config.use_polling_edge_service()
     # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
 
     print("starting featurehub")
