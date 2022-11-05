@@ -3,7 +3,7 @@ from __future__ import annotations  # so we can reference ourselves
 import typing
 import os
 import logging
-import sys
+
 from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext, \
     InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
@@ -12,8 +12,7 @@ from typing import List, Callable
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
 
-log = logging.getLogger(sys.modules[__name__].__name__)
-
+log = logging.getLogger('featurehub_sdk')
 
 class FeatureHubConfig:
     _api_keys: List[str]
