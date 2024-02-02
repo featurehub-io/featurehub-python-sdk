@@ -61,7 +61,7 @@ class ApplyFeatureTest(TestCase):
         self.assertIsNone(found.value)
         ctx.get_attr.assert_called_once()
 
-    def test_should_not_match_percentage_and_should_match_field(self):
+    def test_should_match_conditional(self):
         ctx = MagicMock()
         ctx.default_percentage_key = 'userkey-value'
         ctx.get_attr.return_value = 'ponsonby'

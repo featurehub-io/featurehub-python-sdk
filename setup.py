@@ -18,8 +18,8 @@ setup(
     packages=['featurehub_sdk'],
     long_description=long_description,
     long_description_content_type='text/markdown',
-    install_requires=['urllib3==1.26.*',
-                      'sseclient-py==1.7.*',
+    install_requires=['urllib3==2.2.*',
+                      'sseclient-py==1.8.*',
                       'murmurhash2==0.2.*',
-                      'node_semver==0.8.*'],
+                      'node_semver==0.9.*'],
 )

@@ -81,6 +81,15 @@ class FeatureStateHolder(FeatureState):
 
         return state.get('value')
 
+    @property
+    def feature_properties(self) -> dict[str, str]:
+        state = self._top_feature_state_holder()._feature_state()
+
+        if state is None or state.get('fp') is None:
+            return {}
+
+        return state.get('fp')
+
     def with_context(self, ctx: ClientContext) -> FeatureState:
         return FeatureStateHolder(self._key, self._repo, None, self, ctx)
 
