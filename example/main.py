@@ -55,7 +55,7 @@ def create_app(config=None):
 
     fh_config = FeatureHubConfig(edge_url, [client_eval_key])
     # to use polling
-    fh_config.use_polling_edge_service()
+    fh_config.use_polling_edge_service(1)
     # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
 
     print("starting featurehub")

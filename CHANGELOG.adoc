@@ -1,0 +1,7 @@
+= CHANGELOG
+
+==== 1.1.0
+
+- updated to support feature properties
+- updated to rev the dependencies. Minimum support of Python 3.7 means
+upgrading the urllib to 2.x and SSE client library

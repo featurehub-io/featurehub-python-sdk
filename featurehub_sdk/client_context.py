@@ -30,6 +30,10 @@ class FeatureState:
         return ""
 
     @property
+    def feature_properties(self) -> dict[str,str]:
+        return {}
+
+    @property
     def get_version(self) -> int:
         return -1
 

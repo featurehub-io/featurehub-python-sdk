@@ -2,7 +2,7 @@ import datetime
 from typing import Optional, List, Dict
 import re
 
-from semver import cmp
+from nodesemver import cmp
 import math
 from murmurhash2 import murmurhash3
 from ipaddress import ip_address, ip_network

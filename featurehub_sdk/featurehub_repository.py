@@ -61,8 +61,6 @@ class FeatureHubRepository(InternalFeatureRepository):
         # if feature is in the dictionary, check if version has changed
         elif feature_state.get('version') < holder.get_version:
             return
-        elif feature_state.get('version') == holder.get_version and feature_state.get('value') == holder.get_value:
-            return
 
         holder.set_feature_state(feature_state)
 

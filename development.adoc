@@ -10,4 +10,4 @@ This SDK provides two edge clients (a Streaming one based on urllib3's `sseclien
 
 == Repo issues
 - needs reporting on how much test coverage we have
-- needs beta testing!
+
