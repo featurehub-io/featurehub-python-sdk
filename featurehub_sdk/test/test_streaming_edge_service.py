@@ -36,3 +36,55 @@ class StreamingRetryDelayTest(TestCase):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, 60.0)
         self.assertEqual(thread._max_retry_delay, 60.0)
+
+
+def _sse_response(body: bytes):
+    resp = MagicMock(name="sse-response")
+    resp.status = 200
+    resp.__iter__.return_value = iter([body] if body else [])
+    return resp
+
+
+def _run_until_waits(thread: _StreamingThread, responses, waits: int):
+    """runs the streaming loop synchronously, recording each reconnect delay and cancelling after `waits` of them"""
+    thread._http = MagicMock()
+    thread._http.request.side_effect = responses
+    delays = []
+
+    def wait(delay):
+        delays.append(delay)
+        if len(delays) >= waits:
+            thread.cancel()
+
+    thread._wakeup = MagicMock()
+    thread._wakeup.wait.side_effect = wait
+    thread.run()
+    return delays
+
+
+class StreamingReconnectTest(TestCase):
+    def test_stream_that_closes_immediately_keeps_backing_off(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        delays = _run_until_waits(thread, [_sse_response(b"") for _ in range(3)], 3)
+        self.assertEqual(delays, [1.0, 2.0, 4.0])
+
+    def test_bad_events_do_not_stop_the_stream(self):
+        repo = MagicMock()
+        repo.notify.side_effect = [RuntimeError("listener failed"), None]
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+        body = (b"event: config\ndata: {}\n\n"
+                b"event: feature\ndata: {\"id\":\"1\"}\n\n"
+                b"event: feature\ndata: {\"id\":\"2\"}\n\n")
+        delays = _run_until_waits(thread, [_sse_response(b""), _sse_response(body)], 2)
+        self.assertFalse(thread.stopped)
+        self.assertEqual(repo.notify.call_count, 2)
+        # the second stream delivered events, so the delay was reset rather than grown to 2
+        self.assertEqual(delays, [1.0, 1.0])
+
+    def test_unexpected_exception_does_not_kill_thread(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        delays = _run_until_waits(thread, [RuntimeError("boom"), RuntimeError("boom")], 2)
+        self.assertEqual(delays, [1.0, 2.0])

@@ -13,12 +13,9 @@ dependencies = [
     "flask[async]>=3.1.0",
 ]
 
-[project.scripts]
-example = "example:main"
-
-[build-system]
-requires = ["uv_build>=0.13.0,<0.14.0"]
-build-backend = "uv_build"
+[tool.uv]
+# the example is a script (main.py), not an installable package
+package = false
 
 [tool.uv.sources]
 featurehub-sdk = { path = "..", editable = true }

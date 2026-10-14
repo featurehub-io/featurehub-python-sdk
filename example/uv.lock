@@ -32,7 +32,7 @@ wheels = [
 [[package]]
 name = "example"
 version = "0.1.0"
-source = { editable = "." }
+source = { virtual = "." }
 dependencies = [
     { name = "featurehub-sdk" },
     { name = "flask", extra = ["async"] },
@@ -48,7 +48,7 @@ requires-dist = [
 
 [[package]]
 name = "featurehub-sdk"
-version = "1.1.0"
+version = "1.1.1"
 source = { editable = "../" }
 dependencies = [
     { name = "murmurhash2" },

@@ -72,9 +72,11 @@ class _StreamingThread(threading.Thread):
                     headers.pop('Last-Event-Id', None)
                 resp = self._http.request('GET', self._url, preload_content=False, headers=headers)
                 if resp.status == 200:
-                    retry_delay = self._initial_retry_delay
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
+                        # only a stream that actually delivers events counts as recovered - a server or proxy that
+                        # accepts and immediately drops the connection keeps backing off
+                        retry_delay = self._initial_retry_delay
                         # sseclient creates a fresh Event per message with id=None unless the message
                         # carries an id: field, but per the SSE spec the last event id persists until
                         # the server sends a new one (an empty id resets it)
@@ -82,32 +84,41 @@ class _StreamingThread(threading.Thread):
                             last_event_id = event.id
                         log.debug("received data %s: %s", event.event, event.data)
 
-                        if event.event == 'config':
-                            self._process_config(event.data)
-                        else:
-                            self._repository.notify(event.event, self._check_data(event.data))
+                        try:
+                            if event.event == 'config':
+                                self._process_config(event.data)
+                            else:
+                                self._repository.notify(event.event, self._check_data(event.data))
+                        except Exception:
+                            # a bad event or a failing repository listener shouldn't drop the stream
+                            log.exception("failed to process featurehub %s event", event.event)
 
                         if self._cancel:
                             self._client.close()
-                    continue
+                    log.debug("featurehub stream ended")
                 elif resp.status == 404:
                     log.error("key provided for featurehub is invalid")
                     self._cancel = True
-                    continue
                 else:
                     log.error("featurehub returned unexpected status %s", resp.status)
             except (ValueError, urllib3.exceptions.HTTPError) as err:
                 # HTTPError is the base of all urllib3 errors, including failing to connect at all
                 log.error("failed to communicate with featurehub: %s", err)
+            except Exception:
+                # anything else must not kill the thread, or updates would stop for good
+                log.exception("unexpected failure streaming from featurehub")
 
-            # wait before reconnecting so an unreachable server isn't hammered, waking early if cancelled
+            if self._cancel or self._stopped:
+                break
+
+            # always wait before reconnecting so an unreachable server isn't hammered, waking early if cancelled
             log.debug("featurehub reconnecting in %ss", retry_delay)
             self._wakeup.wait(retry_delay)
             retry_delay = min(retry_delay * 2, self._max_retry_delay)
 
     def _process_config(self, data):
         payload = json.loads(data)
-        if payload['edge.stale'] is not None:
+        if payload.get('edge.stale') is not None:
             log.warning("environment is stale, stopped requesting updates")
             self._stopped = True
 
