@@ -50,7 +50,7 @@ class PollingEdgeService(EdgeService):
         old_cancel = self._cancel
         self._cancel = False
         if old_cancel:  # if we had cancelled, start polling again
-            self.poll_with_interval()
+            self._schedule_poll(0)
 
     # this does the business, calls the remote service and gets the features back
     async def _get_updates(self):
@@ -70,22 +70,30 @@ class PollingEdgeService(EdgeService):
         if self._context:
             headers['x-featurehub'] = self._context
 
-        resp = self._http.request(method='GET', url=url, headers=headers)
-        log.debug("polling status %s", resp.status)
+        try:
+            resp = self._http.request(method='GET', url=url, headers=headers)
+            log.debug("polling status %s", resp.status)
 
-        if resp.status == 200 or resp.status == 236:
-            if 'etag' in resp.headers:
-                self._etag = resp.headers['etag']
+            if resp.status == 200 or resp.status == 236:
+                if 'etag' in resp.headers:
+                    self._etag = resp.headers['etag']
 
-            if 'cache-control' in resp.headers:
-                self._cache_control_polling_interval(resp.headers['cache-control'])
+                if 'cache-control' in resp.headers:
+                    self._cache_control_polling_interval(resp.headers['cache-control'])
 
-            self._process_successful_results(json.loads(resp.data.decode('utf-8')))
+                self._process_successful_results(json.loads(resp.data.decode('utf-8')))
 
-            # if it is a 236, we have been told to stop
-            if resp.status == 236:
-                self._stopped = True
-        elif resp.status == 404: # no such key
+                # if it is a 236, we have been told to stop
+                if resp.status == 236:
+                    self._stopped = True
+                return
+        except (ValueError, urllib3.exceptions.HTTPError) as err:
+            # HTTPError is the base of all urllib3 errors, including failing to connect at all. ValueError covers
+            # a body that isn't valid JSON/UTF-8. Either way it is transient, so the next poll tries again
+            log.error("failed to poll featurehub: %s", err)
+            return
+
+        if resp.status == 404: # no such key
             self._repository.notify("failed", None)
             self._cancel = True
             log.error("Specified API Key does not exist %s", self._url)
@@ -108,10 +116,13 @@ class PollingEdgeService(EdgeService):
     async def poll_with_interval(self):
         if not self._cancel and not self._stopped:
             await self._get_updates()
-            if not self._cancel and self._interval > 0:
-                self._thread = threading.Timer(self._interval, self.poll_again)
-                self._thread.daemon = True # allow it to just disappear off if the app closes down
-                self._thread.start()
+            if not self._cancel and not self._stopped and self._interval > 0:
+                self._schedule_poll(self._interval)
+
+    def _schedule_poll(self, delay: float):
+        self._thread = threading.Timer(delay, self.poll_again)
+        self._thread.daemon = True # allow it to just disappear off if the app closes down
+        self._thread.start()
 
     # this ends up being synchronous
     def poll_again(self):

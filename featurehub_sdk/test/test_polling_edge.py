@@ -6,6 +6,7 @@ from featurehub_sdk.polling_edge_service import PollingEdgeService
 
 import asyncio
 import unittest
+import urllib3
 
 from featurehub_sdk.version import sdk_version
 
@@ -117,6 +118,50 @@ class PollingEdgeServiceTest(TestCase):
             repo.notify.assert_called_with('features', [{'a': 1}])
             self.assertFalse(poller.cancelled)
             self.assertTrue(poller.stopped)
+
+    def test_server_unavailable_keeps_polling(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            http_mock = http_class_mock.return_value
+            http_mock.request.side_effect = urllib3.exceptions.MaxRetryError(None, 'http://localhost', 'refused')
+            repo = MagicMock(spec=FeatureHubRepository)
+
+            poller = PollingEdgeService('http://localhost', ['123'], repo, 30)
+            asyncio.run(poller.poll())  # must not raise
+            try:
+                repo.notify.assert_not_called()
+                self.assertFalse(poller.cancelled)
+                self.assertIsNotNone(poller._thread)  # next poll is still scheduled
+            finally:
+                poller.close()
+
+    def test_invalid_json_keeps_polling(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            http_mock = http_class_mock.return_value
+            resp = MagicMock(name="http-response")
+            resp.status = 200
+            resp.headers = {}
+            resp.data.decode.return_value = '<html>gateway error</html>'
+            http_mock.request.return_value = resp
+            repo = MagicMock(spec=FeatureHubRepository)
+
+            poller = PollingEdgeService('http://localhost', ['123'], repo, 30)
+            asyncio.run(poller.poll())  # must not raise
+            try:
+                repo.notify.assert_not_called()
+                self.assertIsNotNone(poller._thread)
+            finally:
+                poller.close()
+
+    def test_update_interval_restarts_cancelled_polling(self):
+        with patch("urllib3.PoolManager"):
+            poller = PollingEdgeService('http://localhost', ['123'], MagicMock(spec=FeatureHubRepository), 0)
+            poller.close()
+            with patch.object(poller, 'poll_again') as poll_again:
+                poller.update_interval(30)
+                poller._thread.join(1)
+                poll_again.assert_called_once()
+            self.assertFalse(poller.cancelled)
+            self.assertEqual(poller.interval, 30)
 
 if __name__ == '__main__':
     unittest.main()

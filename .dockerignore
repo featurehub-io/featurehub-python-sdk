@@ -1,0 +1,10 @@
+.git
+.github
+.idea
+**/.venv
+**/__pycache__
+**/*.py[cod]
+dist
+featurehub_sdk/test
+featurehub_sdk/src
+src

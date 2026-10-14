@@ -1,0 +1,37 @@
+[project]
+name = "featurehub-sdk"
+version = "1.1.0"
+description = "Official Python SDK for FeatureHub"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "FeatureHub.io", email = "info@featurehub.io" }
+]
+keywords = ["feature-flags", "feature-toggles", "flags", "toggles"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "murmurhash2==0.2.*",
+    "node-semver==0.9.*",
+    "sseclient-py==1.9.*",
+    "urllib3==2.6.*",
+]
+
+[project.urls]
+Homepage = "https://github.com/featurehub-io/featurehub-python-sdk"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "featurehub_sdk"
+module-root = ""
+source-exclude = ["featurehub_sdk/test", "featurehub_sdk/src", "**/__pycache__"]
+wheel-exclude = ["featurehub_sdk/test", "featurehub_sdk/src", "**/__pycache__"]
