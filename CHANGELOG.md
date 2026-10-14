@@ -1,9 +1,10 @@
-= Changelog
+# Changelog
 
 * 1.1.1
     - fixes for SSE for last-event-id and making streaming more resilient
     - added new environment variables for retry delays
     - made polling more resilient to failures, particularly on 1st one
+    - updated dependencies based on trivy scan
 * 1.1.0 - update dependencies
 * 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.
 * 0.0.2 - initial release
