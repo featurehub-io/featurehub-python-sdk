@@ -1,6 +1,6 @@
 [project]
 name = "featurehub-sdk"
-version = "1.1.1"
+version = "1.2.0"
 description = "Official Python SDK for FeatureHub"
 readme = "README.md"
 license = "MIT"
@@ -29,6 +29,14 @@ Homepage = "https://github.com/featurehub-io/featurehub-python-sdk"
 [build-system]
 requires = ["uv_build>=0.13.0,<0.14.0"]
 build-backend = "uv_build"
+
+[tool.uv]
+# address issues of supply chain attacks
+exclude-newer = "7 days"
+
+[tool.uv.audit]
+# address issues of supply chain attacks
+malware-check = true
 
 [tool.uv.build-backend]
 module-name = "featurehub_sdk"
