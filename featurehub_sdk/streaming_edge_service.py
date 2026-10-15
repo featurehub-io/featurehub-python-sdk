@@ -6,6 +6,7 @@ import urllib3
 import json
 import threading
 import logging
+import os
 import sys
 
 from featurehub_sdk.client_context import InternalFeatureRepository
@@ -14,6 +15,20 @@ from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger('featurehub_sdk')
 
+
+def _env_seconds(name: str, default: float) -> float:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        seconds = float(value)
+        if seconds > 0:
+            return seconds
+    except ValueError:
+        pass
+    log.warning("ignoring invalid %s=%r, using %ss", name, value, default)
+    return default
+
 class _StreamingThread(threading.Thread):
     _cancel: bool
     _http: urllib3.PoolManager
@@ -21,6 +36,14 @@ class _StreamingThread(threading.Thread):
     _repository: InternalFeatureRepository
     _stopped: bool
     _url: str
+    _wakeup: threading.Event
+    _initial_retry_delay: float
+    _max_retry_delay: float
+
+    # delay (in seconds) before reconnecting after a failure, doubling on each consecutive failure up to the max.
+    # overridden by FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY and FEATUREHUB_STREAMING_MAX_RETRY_DELAY
+    INITIAL_RETRY_DELAY = 1.0
+    MAX_RETRY_DELAY = 30.0
 
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository):
@@ -29,40 +52,73 @@ class _StreamingThread(threading.Thread):
         self._repository = repository
         self._cancel = False
         self._stopped = False
+        self._wakeup = threading.Event()
+        self._initial_retry_delay = _env_seconds('FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY', self.INITIAL_RETRY_DELAY)
+        self._max_retry_delay = max(_env_seconds('FEATUREHUB_STREAMING_MAX_RETRY_DELAY', self.MAX_RETRY_DELAY),
+                                    self._initial_retry_delay)
         self._http = urllib3.PoolManager()
 
     def run(self):
         headers = {'Accept': 'text/event-stream', 'X-SDK': 'Python', 'X-SDK-Version': sdk_version}
         # headers = {'Accept': 'text/event-stream'}
         last_event_id = None
+        retry_delay = self._initial_retry_delay
         while not self._cancel and not self._stopped:
             try:
                 log.debug("featurehub starting request: %s", self._url)
-                if last_event_id is not None:
+                if last_event_id:
                     headers['Last-Event-Id'] = last_event_id
+                else:
+                    headers.pop('Last-Event-Id', None)
                 resp = self._http.request('GET', self._url, preload_content=False, headers=headers)
                 if resp.status == 200:
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
-                        last_event_id = event.id
+                        # only a stream that actually delivers events counts as recovered - a server or proxy that
+                        # accepts and immediately drops the connection keeps backing off
+                        retry_delay = self._initial_retry_delay
+                        # sseclient creates a fresh Event per message with id=None unless the message
+                        # carries an id: field, but per the SSE spec the last event id persists until
+                        # the server sends a new one (an empty id resets it)
+                        if event.id is not None:
+                            last_event_id = event.id
                         log.debug("received data %s: %s", event.event, event.data)
 
-                        if event.event == 'config':
-                            self._process_config(event.data)
-                        else:
-                            self._repository.notify(event.event, self._check_data(event.data))
+                        try:
+                            if event.event == 'config':
+                                self._process_config(event.data)
+                            else:
+                                self._repository.notify(event.event, self._check_data(event.data))
+                        except Exception:
+                            # a bad event or a failing repository listener shouldn't drop the stream
+                            log.exception("failed to process featurehub %s event", event.event)
 
                         if self._cancel:
                             self._client.close()
+                    log.debug("featurehub stream ended")
                 elif resp.status == 404:
                     log.error("key provided for featurehub is invalid")
                     self._cancel = True
-            except (ValueError, urllib3.exceptions.ProtocolError) as err:
-                log.error("failed to communicate with featurehub", err)
+                else:
+                    log.error("featurehub returned unexpected status %s", resp.status)
+            except (ValueError, urllib3.exceptions.HTTPError) as err:
+                # HTTPError is the base of all urllib3 errors, including failing to connect at all
+                log.error("failed to communicate with featurehub: %s", err)
+            except Exception:
+                # anything else must not kill the thread, or updates would stop for good
+                log.exception("unexpected failure streaming from featurehub")
+
+            if self._cancel or self._stopped:
+                break
+
+            # always wait before reconnecting so an unreachable server isn't hammered, waking early if cancelled
+            log.debug("featurehub reconnecting in %ss", retry_delay)
+            self._wakeup.wait(retry_delay)
+            retry_delay = min(retry_delay * 2, self._max_retry_delay)
 
     def _process_config(self, data):
         payload = json.loads(data)
-        if payload['edge.stale'] is not None:
+        if payload.get('edge.stale') is not None:
             log.warning("environment is stale, stopped requesting updates")
             self._stopped = True
 
@@ -78,9 +134,11 @@ class _StreamingThread(threading.Thread):
 
     def cancel(self):
         self._cancel = True
+        self._wakeup.set()
 
     def close(self):
         self._cancel = True
+        self._wakeup.set()
         if self._client:
             self._client.close()
 

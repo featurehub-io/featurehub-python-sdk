@@ -12,8 +12,7 @@ from featurehub_sdk.client_context import ServerEvalFeatureContext
 # we need this so we can do async testing (Stack Overflow)
 def sync(coro):
     def wrapper(*args, **kwargs):
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(coro(*args, **kwargs))
+        asyncio.run(coro(*args, **kwargs))
     return wrapper
 
 # monkey patch MagicMock to support async (Stack Overflow)
