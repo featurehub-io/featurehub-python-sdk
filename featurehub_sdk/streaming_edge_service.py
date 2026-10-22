@@ -26,11 +26,17 @@ class _StreamingThread(threading.Thread):
     _wakeup: threading.Event
     _initial_retry_delay: float
     _max_retry_delay: float
+    _timeout: urllib3.Timeout
 
     # delay (in seconds) before reconnecting after a failure, doubling on each consecutive failure up to the max.
     # overridden by FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY and FEATUREHUB_STREAMING_MAX_RETRY_DELAY
     INITIAL_RETRY_DELAY = 1.0
     MAX_RETRY_DELAY = 30.0
+    # how long (in seconds) to wait to connect, and for the next data on an open stream, before reconnecting - so a
+    # dropped or half-open connection doesn't block forever. overridden by FEATUREHUB_STREAMING_CONNECT_TIMEOUT and
+    # FEATUREHUB_STREAMING_READ_TIMEOUT. the read timeout must be longer than the server keeps a quiet stream open
+    CONNECT_TIMEOUT = 12.0
+    READ_TIMEOUT = 60.0
 
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository):
@@ -44,6 +50,8 @@ class _StreamingThread(threading.Thread):
         self._initial_retry_delay = _env_seconds('FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY', self.INITIAL_RETRY_DELAY)
         self._max_retry_delay = max(_env_seconds('FEATUREHUB_STREAMING_MAX_RETRY_DELAY', self.MAX_RETRY_DELAY),
                                     self._initial_retry_delay)
+        self._timeout = urllib3.Timeout(connect=_env_seconds('FEATUREHUB_STREAMING_CONNECT_TIMEOUT', self.CONNECT_TIMEOUT),
+                                        read=_env_seconds('FEATUREHUB_STREAMING_READ_TIMEOUT', self.READ_TIMEOUT))
         self._http = urllib3.PoolManager()
 
     def run(self):
@@ -59,7 +67,8 @@ class _StreamingThread(threading.Thread):
                     headers['Last-Event-Id'] = last_event_id
                 else:
                     headers.pop('Last-Event-Id', None)
-                resp = self._http.request('GET', self._url, preload_content=False, headers=headers)
+                resp = self._http.request('GET', self._url, preload_content=False, headers=headers,
+                                          timeout=self._timeout)
                 if resp.status == 200:
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
@@ -83,22 +92,26 @@ class _StreamingThread(threading.Thread):
                             # a bad event or a failing repository listener shouldn't drop the stream
                             log.exception("failed to process featurehub %s event", event.event)
 
-                        if self._cancel:
-                            self._client.close()
+                        if self._cancel or self._stopped:
+                            break
                     log.debug("featurehub stream ended")
                 elif resp.status == 404:
                     log.error("key provided for featurehub is invalid")
                     self._invalid_key = True
                     self._cancel = True
+                    self._repository.notify("failed", None)
                 else:
                     log.error("featurehub returned unexpected status %s", resp.status)
             except (ValueError, urllib3.exceptions.HTTPError) as err:
                 # HTTPError is the base of all urllib3 errors, including failing to connect at all
-                log.error("failed to communicate with featurehub: %s", err)
+                if not self._cancel:  # close() interrupting the stream is expected
+                    log.error("failed to communicate with featurehub: %s", err)
             except Exception:
                 # anything else must not kill the thread, or updates would stop for good
-                log.exception("unexpected failure streaming from featurehub")
+                if not self._cancel:
+                    log.exception("unexpected failure streaming from featurehub")
             finally:
+                self._client = None  # so close() can't close a stream from an earlier connection
                 # with preload_content=False the connection only goes back to the pool once released. it is closed
                 # first, as a stream that was cancelled or failed may still have unread data on it
                 if resp is not None:
@@ -133,6 +146,10 @@ class _StreamingThread(threading.Thread):
     def invalid_key(self):
         return self._invalid_key
 
+    @property
+    def cancelled(self):
+        return self._cancel
+
     def cancel(self):
         self._cancel = True
         self._wakeup.set()
@@ -140,8 +157,9 @@ class _StreamingThread(threading.Thread):
     def close(self):
         self._cancel = True
         self._wakeup.set()
-        if self._client:
-            self._client.close()
+        client = self._client  # read once, as the streaming thread clears it when a connection ends
+        if client:
+            client.close()
 
 
 class StreamingEdgeClient(EdgeService):
@@ -163,10 +181,13 @@ class StreamingEdgeClient(EdgeService):
     async def poll(self):
         thread = self._streaming_thread
         # streaming stopped by an invalid key (404) or a stale environment stays stopped
-        if thread.is_alive() or thread.stopped or thread.invalid_key:
+        if thread.stopped or thread.invalid_key:
+            return
+        if thread.is_alive() and not thread.cancelled:
             return
 
-        if thread.ident is not None:  # it has run before and been closed, and a thread can only be started once
+        # a closed thread may still be shutting down, and a thread can only be started once, so use a new one
+        if thread.ident is not None:
             thread = self._streaming_thread = _StreamingThread(self._edge_url, self._api_keys, self._repository)
         thread.start()
 

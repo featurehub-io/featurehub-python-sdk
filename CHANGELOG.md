@@ -15,6 +15,9 @@
     - polling requests time out after 12 seconds, configurable with the FEATUREHUB_POLLING_TIMEOUT environment variable
     - update_interval() takes effect immediately on a running poller, and starts polling if the interval was 0
     - the streaming client can be polled again after close(), and releases its connection when a stream ends
+    - streaming reconnects after a connect timeout (12s) or a quiet stream (60s), configurable with
+      FEATUREHUB_STREAMING_CONNECT_TIMEOUT and FEATUREHUB_STREAMING_READ_TIMEOUT
+    - streaming notifies the repository of failure on an invalid API key (404), as polling does
     - updated dependencies based on trivy scan
 * 1.1.0 - update dependencies
 * 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.

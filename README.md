@@ -62,7 +62,9 @@ asyncio.run(config.init()) # run async command in sync
 
 By default, this SDK will use SSE client. If the SSE connection fails, it reconnects after a delay that starts at 1 second
 and doubles on each consecutive failure up to 30 seconds. These can be changed (in seconds) with the environment variables
-`FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY` and `FEATUREHUB_STREAMING_MAX_RETRY_DELAY`.
+`FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY` and `FEATUREHUB_STREAMING_MAX_RETRY_DELAY`. It reconnects if connecting takes
+longer than 12 seconds, or if no data arrives on an open stream for 60 seconds; these can be changed (in seconds) with
+`FEATUREHUB_STREAMING_CONNECT_TIMEOUT` and `FEATUREHUB_STREAMING_READ_TIMEOUT`.
 
 If you decide to use FeatureHub polling client, after initialising the config, you can add this:
 

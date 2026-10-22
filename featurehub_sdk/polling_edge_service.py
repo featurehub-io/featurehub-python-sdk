@@ -23,7 +23,6 @@ class PollingEdgeService(EdgeService):
     _interval: int
     _repository: FeatureHubRepository
     _cancel: bool
-    _closed: bool
     _worker: Optional[threading.Thread]
     _cond: threading.Condition
     _wakeup: threading.Event
@@ -44,7 +43,6 @@ class PollingEdgeService(EdgeService):
         self._interval = interval
         self._repository = repository
         self._cancel = False
-        self._closed = False
         self._stopped = False
         self._invalid_key = False
         # all requests to the server are made by a single worker thread, so there is only ever one in flight.
@@ -73,8 +71,7 @@ class PollingEdgeService(EdgeService):
             # polling stopped by an invalid key (404) or a stale environment stays stopped
             if self._invalid_key or self._stopped:
                 return
-            if self._closed:  # close() stopped polling, so start it again
-                self._closed = False
+            if self._cancel:  # close() stopped polling, so start it again
                 self._cancel = False
                 self._request_fetch()
             elif self._worker is not None:
@@ -146,7 +143,8 @@ class PollingEdgeService(EdgeService):
         if max_age: # not none and not empty
             new_interval = int(max_age[0])
             if new_interval > 0:
-                self._interval = new_interval
+                with self._cond:  # update_interval() can change it from another thread
+                    self._interval = new_interval
 
     # the worker: fetch, then wait for the interval (or until a fetch is asked for), and repeat. it stops when
     # cancelled, when the server says the environment is stale, or - with an interval of 0 - once nothing is waiting
@@ -223,7 +221,6 @@ class PollingEdgeService(EdgeService):
             if self._invalid_key:  # don't try again with a key the server rejected (404)
                 return
             self._cancel = False
-            self._closed = False
             request = self._request_fetch()
         if request is None:  # the environment is stale, so the server told us to stop asking
             return
@@ -236,7 +233,6 @@ class PollingEdgeService(EdgeService):
     def close(self):
         with self._cond:
             self._cancel = True
-            self._closed = True
             self._wakeup.set()
             self._cond.notify_all()
 

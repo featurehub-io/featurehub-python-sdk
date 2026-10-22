@@ -3,6 +3,7 @@ from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
 import asyncio
+import threading
 
 from featurehub_sdk.streaming_edge_service import _StreamingThread, StreamingEdgeClient
 
@@ -118,6 +119,33 @@ class StreamingReconnectTest(TestCase):
         thread._http.request.return_value = not_found
         thread.run()
         self.assertTrue(thread.invalid_key)
+        thread._repository.notify.assert_called_once_with("failed", None)
+
+    def test_stale_environment_stops_reading_the_stream(self):
+        repo = MagicMock()
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+        body = (b"event: config\ndata: {\"edge.stale\": true}\n\n"
+                b"event: features\ndata: []\n\n")
+        thread._http = MagicMock()
+        thread._http.request.return_value = _sse_response(body)
+        thread.run()
+        self.assertTrue(thread.stopped)
+        repo.notify.assert_not_called()
+
+    def test_requests_use_timeouts(self):
+        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_READ_TIMEOUT": "90"}, clear=True):
+            thread = _thread()
+        _run_until_waits(thread, [_sse_response(b"")], 1)
+        timeout = thread._http.request.call_args.kwargs['timeout']
+        self.assertEqual(timeout.connect_timeout, _StreamingThread.CONNECT_TIMEOUT)
+        self.assertEqual(timeout.read_timeout, 90.0)
+
+    def test_close_does_not_close_a_finished_connection(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        _run_until_waits(thread, [_sse_response(b"event: features\ndata: []\n\n")], 1)
+        self.assertIsNone(thread._client)
 
 
 class StreamingEdgeClientTest(TestCase):
@@ -135,6 +163,20 @@ class StreamingEdgeClientTest(TestCase):
             asyncio.run(client.poll())  # must not raise RuntimeError for starting a thread twice
             self.assertIsNot(client._streaming_thread, first)
             client._streaming_thread.join(1)
+
+    def test_poll_while_closed_thread_is_still_exiting_starts_a_new_thread(self):
+        client = self._client()
+        release = threading.Event()
+        with patch.object(_StreamingThread, "run", lambda t: release.wait(5)):
+            asyncio.run(client.poll())
+            first = client._streaming_thread
+            client.close()
+            asyncio.run(client.poll())  # the closed thread hasn't exited yet
+            try:
+                self.assertIsNot(client._streaming_thread, first)
+                self.assertTrue(client._streaming_thread.is_alive())
+            finally:
+                release.set()
 
     def test_poll_does_not_restart_after_invalid_key_or_stale(self):
         for flag in ("_invalid_key", "_stopped"):
