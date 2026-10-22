@@ -10,7 +10,11 @@
     - made polling more resilient to failures, particularly on 1st one: errors are logged and polling continues
     - polling now uses a single worker thread so only one request is ever in flight; poll() and context_change()
       wait for it without blocking the event loop. poll_with_interval() and poll_again() have been removed
-    - polling stopped by an invalid API key (404) is no longer restarted by poll(), context_change() or update_interval()
+    - polling or streaming stopped by an invalid API key (404) or a stale environment is no longer restarted by poll(),
+      context_change(), update_interval() or close()
+    - polling requests time out after 12 seconds, configurable with the FEATUREHUB_POLLING_TIMEOUT environment variable
+    - update_interval() takes effect immediately on a running poller, and starts polling if the interval was 0
+    - the streaming client can be polled again after close(), and releases its connection when a stream ends
     - updated dependencies based on trivy scan
 * 1.1.0 - update dependencies
 * 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.

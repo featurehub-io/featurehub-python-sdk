@@ -2,7 +2,9 @@ import os
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
-from featurehub_sdk.streaming_edge_service import _StreamingThread
+import asyncio
+
+from featurehub_sdk.streaming_edge_service import _StreamingThread, StreamingEdgeClient
 
 
 def _thread() -> _StreamingThread:
@@ -75,12 +77,12 @@ class StreamingReconnectTest(TestCase):
         with patch.dict(os.environ, {}, clear=True):
             thread = _StreamingThread("http://localhost/", ["key"], repo)
         body = (b"event: config\ndata: {}\n\n"
-                b"event: feature\ndata: {\"id\":\"1\"}\n\n"
+                b"event: features\ndata: [{\"id\":\"1\"}]\n\n"
                 b"event: feature\ndata: {\"id\":\"2\"}\n\n")
         delays = _run_until_waits(thread, [_sse_response(b""), _sse_response(body)], 2)
         self.assertFalse(thread.stopped)
         self.assertEqual(repo.notify.call_count, 2)
-        # the second stream delivered events, so the delay was reset rather than grown to 2
+        # the second stream delivered the features, so the delay was reset rather than grown to 2
         self.assertEqual(delays, [1.0, 1.0])
 
     def test_unexpected_exception_does_not_kill_thread(self):
@@ -88,3 +90,59 @@ class StreamingReconnectTest(TestCase):
             thread = _thread()
         delays = _run_until_waits(thread, [RuntimeError("boom"), RuntimeError("boom")], 2)
         self.assertEqual(delays, [1.0, 2.0])
+
+    def test_events_other_than_features_do_not_reset_the_delay(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        body = b"event: config\ndata: {}\n\n"
+        delays = _run_until_waits(thread, [_sse_response(body) for _ in range(3)], 3)
+        self.assertEqual(delays, [1.0, 2.0, 4.0])
+
+    def test_responses_are_released(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        failed = MagicMock(name="failed-response")
+        failed.status = 500
+        streamed = _sse_response(b"event: features\ndata: []\n\n")
+        _run_until_waits(thread, [failed, streamed], 2)
+        for resp in (failed, streamed):
+            resp.close.assert_called()
+            resp.release_conn.assert_called()
+
+    def test_invalid_key_stops_for_good(self):
+        not_found = MagicMock(name="not-found")
+        not_found.status = 404
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        thread._http = MagicMock()
+        thread._http.request.return_value = not_found
+        thread.run()
+        self.assertTrue(thread.invalid_key)
+
+
+class StreamingEdgeClientTest(TestCase):
+    def _client(self):
+        client = StreamingEdgeClient("http://localhost/", ["key"], MagicMock())
+        return client
+
+    def test_poll_after_close_starts_a_new_thread(self):
+        client = self._client()
+        with patch.object(_StreamingThread, "run"):
+            asyncio.run(client.poll())
+            first = client._streaming_thread
+            first.join(1)
+            client.close()
+            asyncio.run(client.poll())  # must not raise RuntimeError for starting a thread twice
+            self.assertIsNot(client._streaming_thread, first)
+            client._streaming_thread.join(1)
+
+    def test_poll_does_not_restart_after_invalid_key_or_stale(self):
+        for flag in ("_invalid_key", "_stopped"):
+            client = self._client()
+            with patch.object(_StreamingThread, "run"):
+                asyncio.run(client.poll())
+                first = client._streaming_thread
+                first.join(1)
+                setattr(first, flag, True)
+                asyncio.run(client.poll())
+                self.assertIs(client._streaming_thread, first)

@@ -74,6 +74,9 @@ config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLL_IN
 
 in this case it is configured for requesting an update every 30 seconds.
 
+Each polling request times out after 12 seconds, which can be changed (in seconds) with the environment variable
+`FEATUREHUB_POLLING_TIMEOUT`.
+
 #### 3. Check FeatureHub Repository readiness and request feature state
 
 Check for FeatureHub Repository readiness:

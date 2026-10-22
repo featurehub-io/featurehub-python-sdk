@@ -5,6 +5,7 @@ from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.polling_edge_service import PollingEdgeService
 
 import asyncio
+import os
 import threading
 import time
 import unittest
@@ -56,7 +57,8 @@ class PollingEdgeServiceTest(TestCase):
                                                  headers={'X-SDK': 'Python',
                                                           'X-SDK-Version': sdk_version,
                                                           'if-none-match': 'abcde'
-                                                          })
+                                                          },
+                                                 timeout=PollingEdgeService.TIMEOUT)
             self.assertEqual(poller.interval, 16)
             self.assertTrue(poller.stopped)
 
@@ -76,7 +78,8 @@ class PollingEdgeServiceTest(TestCase):
                                                  headers={'X-SDK': 'Python',
                                                           'X-SDK-Version': sdk_version,
                                                           'x-featurehub': '1234'
-                                                          })
+                                                          },
+                                                 timeout=PollingEdgeService.TIMEOUT)
 
     def test_with_failure(self):
         with patch("urllib3.PoolManager") as http_class_mock:
@@ -268,6 +271,81 @@ class PollingEdgeServiceTest(TestCase):
                 self.assertEqual(http_class_mock.return_value.request.call_count, 2)
             finally:
                 poller.close()
+
+    def test_stale_environment_stops_further_requests(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '[]', status=236)
+            asyncio.run(poller.poll())
+            self.assertTrue(poller.stopped)
+            asyncio.run(poller.poll())
+            asyncio.run(poller.context_change("userkey=a"))
+            poller.update_interval(30)
+            self.assertEqual(http_class_mock.return_value.request.call_count, 1)
+            self.assertIsNone(poller._worker)
+
+    def test_close_after_invalid_key_does_not_resume_polling(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '', status=404)
+            asyncio.run(poller.poll())
+            poller.close()
+            asyncio.run(poller.poll())
+            poller.update_interval(30)
+            self.assertIsNone(poller._worker)
+            self.assertEqual(http_class_mock.return_value.request.call_count, 1)
+
+    def test_update_interval_starts_polling_when_it_was_zero(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '[]', interval=0)
+            asyncio.run(poller.poll())
+            worker = poller._worker
+            if worker:
+                worker.join(1)
+            self.assertIsNone(poller._worker)
+            poller.update_interval(30)
+            try:
+                self.assertIsNotNone(poller._worker)
+            finally:
+                poller.close()
+
+    def test_update_interval_shortens_the_running_wait(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '[]', interval=60)
+            asyncio.run(poller.poll())
+            try:
+                poller.update_interval(0.05)
+                deadline = time.monotonic() + 2
+                while http_class_mock.return_value.request.call_count < 2 and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertGreaterEqual(http_class_mock.return_value.request.call_count, 2)
+            finally:
+                poller.close()
+
+    def test_close_wakes_waiting_callers(self):
+        started = threading.Event()
+        release = threading.Event()
+
+        def hung_request(**kwargs):
+            started.set()
+            release.wait(5)
+            raise urllib3.exceptions.ReadTimeoutError(None, 'http://localhost', 'timed out')
+
+        with patch("urllib3.PoolManager") as http_class_mock:
+            http_class_mock.return_value.request.side_effect = hung_request
+            poller = PollingEdgeService('http://localhost', ['123'], MagicMock(spec=FeatureHubRepository), 30)
+            caller = threading.Thread(target=lambda: asyncio.run(poller.poll()))
+            caller.start()
+            self.assertTrue(started.wait(1))
+            poller.close()
+            caller.join(1)
+            self.assertFalse(caller.is_alive())
+            release.set()
+
+    def test_timeout_can_be_overridden(self):
+        with patch.dict(os.environ, {"FEATUREHUB_POLLING_TIMEOUT": "3"}):
+            with patch("urllib3.PoolManager") as http_class_mock:
+                poller, repo = self._poller_returning(http_class_mock, '[]', interval=0)
+                asyncio.run(poller.poll())
+        self.assertEqual(http_class_mock.return_value.request.call_args.kwargs['timeout'], 3.0)
 
 if __name__ == '__main__':
     unittest.main()

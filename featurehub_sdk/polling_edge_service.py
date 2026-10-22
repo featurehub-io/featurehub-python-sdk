@@ -6,15 +6,20 @@ import threading
 import logging
 import json
 import asyncio
+import time
 from hashlib import sha256
 from typing import List
-from featurehub_sdk.edge_service import EdgeService
+from featurehub_sdk.edge_service import EdgeService, _env_seconds
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger('featurehub_sdk')
 
 class PollingEdgeService(EdgeService):
+    # how long (in seconds) a request to the server may take before it is abandoned, overridden by
+    # FEATUREHUB_POLLING_TIMEOUT
+    TIMEOUT = 12.0
+
     _interval: int
     _repository: FeatureHubRepository
     _cancel: bool
@@ -26,6 +31,8 @@ class PollingEdgeService(EdgeService):
     _completed: int
     _client_eval: bool
     _stopped: bool
+    _invalid_key: bool
+    _timeout: float
     _http: urllib3.PoolManager
     _cache_control_pattern: re.Pattern
     _sha_context: Optional[str]
@@ -39,6 +46,7 @@ class PollingEdgeService(EdgeService):
         self._cancel = False
         self._closed = False
         self._stopped = False
+        self._invalid_key = False
         # all requests to the server are made by a single worker thread, so there is only ever one in flight.
         # poll() and context_change() ask the worker for a fetch (bumping _requested) and wait until a fetch that
         # started after their request has finished (_completed catches up). _cond guards all of this state.
@@ -51,6 +59,7 @@ class PollingEdgeService(EdgeService):
         self._context = None
         self._etag = None
         self._sha_context = None
+        self._timeout = _env_seconds('FEATUREHUB_POLLING_TIMEOUT', self.TIMEOUT)
         self._http = urllib3.PoolManager()
         self._cache_control_pattern = re.compile('max-age=(\\d+)')
 
@@ -61,15 +70,20 @@ class PollingEdgeService(EdgeService):
     def update_interval(self, interval: int):
         with self._cond:
             self._interval = interval
-            # if close() stopped polling, start it again. polling stopped by an invalid key (404) stays stopped
-            if self._closed:
+            # polling stopped by an invalid key (404) or a stale environment stays stopped
+            if self._invalid_key or self._stopped:
+                return
+            if self._closed:  # close() stopped polling, so start it again
                 self._closed = False
                 self._cancel = False
+                self._request_fetch()
+            elif self._worker is not None:
+                self._wakeup.set()  # so the worker waits for the new interval instead of the old one
+            elif interval > 0:
                 self._request_fetch()
 
     # this does the business, calls the remote service and gets the features back. only the worker thread calls it
     def _get_updates(self):
-        # TODO: set timeout of tcp requests to 12 seconds, or give users control over it using environ vars
         with self._cond:  # context_change() can update these from another thread
             context = self._context
             sha_context = "0" if self._sha_context is None else self._sha_context
@@ -88,7 +102,7 @@ class PollingEdgeService(EdgeService):
             headers['x-featurehub'] = context
 
         try:
-            resp = self._http.request(method='GET', url=url, headers=headers)
+            resp = self._http.request(method='GET', url=url, headers=headers, timeout=self._timeout)
             log.debug("polling status %s", resp.status)
 
             if resp.status == 200 or resp.status == 236:
@@ -118,7 +132,9 @@ class PollingEdgeService(EdgeService):
 
         if resp.status == 404: # no such key
             self._repository.notify("failed", None)
-            self._cancel = True
+            with self._cond:
+                self._invalid_key = True
+                self._cancel = True
             log.error("Specified API Key does not exist %s", self._url)
         elif resp.status == 503:
             # dacha is busy, just wait
@@ -138,7 +154,7 @@ class PollingEdgeService(EdgeService):
         try:
             while True:
                 with self._cond:
-                    if self._cancel or (self._stopped and self._completed >= self._requested):
+                    if self._finished():
                         return
                     # cleared before reading _requested, so a request made from here on causes another fetch
                     self._wakeup.clear()
@@ -149,23 +165,43 @@ class PollingEdgeService(EdgeService):
                 with self._cond:
                     self._completed = covers
                     self._cond.notify_all()
-                    pending = self._requested > self._completed
-                    if self._cancel or (not pending and (self._stopped or self._interval <= 0)):
+                    if self._finished():
                         return
-                    interval = self._interval
 
-                if not pending:
-                    self._wakeup.wait(interval)
+                self._wait_for_next_fetch()
         finally:
             with self._cond:
-                # decided while holding the lock, so a request can't slip in between and find no worker to serve it
+                # only still set if the worker died unexpectedly, so waiters aren't left waiting on it
                 if self._worker is threading.current_thread():
                     self._worker = None
                 self._cond.notify_all()
 
+    # must be called holding self._cond. decides whether the worker should stop, and if so clears _worker in the same
+    # locked block, so a request can't slip in between and find a worker that is about to exit and never serves it
+    def _finished(self) -> bool:
+        pending = self._requested > self._completed
+        if self._cancel or self._stopped or (not pending and self._interval <= 0):
+            self._worker = None
+            self._cond.notify_all()
+            return True
+        return False
+
+    # waits out the interval from now, waking early for a fetch request, a close or a change to the interval
+    def _wait_for_next_fetch(self):
+        started = time.monotonic()
+        while True:
+            with self._cond:
+                if self._cancel or self._stopped or self._requested > self._completed or self._interval <= 0:
+                    return
+                remaining = started + self._interval - time.monotonic()
+                if remaining <= 0:
+                    return
+                self._wakeup.clear()
+            self._wakeup.wait(remaining)
+
     # must be called holding self._cond. returns the request number to wait for, or None if polling has stopped
     def _request_fetch(self) -> Optional[int]:
-        if self._cancel:
+        if self._cancel or self._stopped:
             return None
         self._requested += 1
         self._wakeup.set()
@@ -178,17 +214,19 @@ class PollingEdgeService(EdgeService):
         if request is None:
             return
         with self._cond:
-            self._cond.wait_for(lambda: self._completed >= request or self._worker is None)
+            self._cond.wait_for(lambda: self._completed >= request or self._worker is None or self._cancel)
 
     # fetches the features (on the worker thread) and waits for them, starting polling if it isn't running.
     # if the interval is zero, this will just issue a get updates and stop
     async def poll(self):
         with self._cond:
-            if self._cancel and not self._closed:  # the API key was invalid (404), so don't try again
+            if self._invalid_key:  # don't try again with a key the server rejected (404)
                 return
             self._cancel = False
             self._closed = False
             request = self._request_fetch()
+        if request is None:  # the environment is stale, so the server told us to stop asking
+            return
         # wait on another thread so a running event loop isn't blocked
         await asyncio.to_thread(self._wait_for_fetch, request)
 
@@ -208,6 +246,8 @@ class PollingEdgeService(EdgeService):
             self._context = header
             self._sha_context = sha256(header.encode('utf-8')).hexdigest()
             request = self._request_fetch() if old_context != header else None
+        if request is None:
+            return
         await asyncio.to_thread(self._wait_for_fetch, request)
 
     @property
