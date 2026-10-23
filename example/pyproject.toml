@@ -1,0 +1,21 @@
+[project]
+name = "example"
+version = "0.1.0"
+description = "Sample todo app that is standard across SDKs"
+readme = "README.md"
+authors = [
+    { name = "Richard Vowles", email = "richard@bluetrainsoftware.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "featurehub-sdk",
+    "flask-cors>=5.0.0",
+    "flask[async]>=3.1.0",
+]
+
+[tool.uv]
+# the example is a script (main.py), not an installable package
+package = false
+
+[tool.uv.sources]
+featurehub-sdk = { path = "..", editable = true }

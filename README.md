@@ -60,7 +60,13 @@ asyncio.run(config.init()) # run async command in sync
 
 ```
 
-By default, this SDK will use SSE client. If you decide to use FeatureHub polling client, after initialising the config, you can add this:
+By default, this SDK will use SSE client. If the SSE connection fails, it reconnects after a delay that starts at 1 second
+and doubles on each consecutive failure up to 30 seconds. These can be changed (in seconds) with the environment variables
+`FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY` and `FEATUREHUB_STREAMING_MAX_RETRY_DELAY`. It reconnects if connecting takes
+longer than 12 seconds, or if no data arrives on an open stream for 60 seconds; these can be changed (in seconds) with
+`FEATUREHUB_STREAMING_CONNECT_TIMEOUT` and `FEATUREHUB_STREAMING_READ_TIMEOUT`.
+
+If you decide to use FeatureHub polling client, after initialising the config, you can add this:
 
 ```python3
 config.use_polling_edge_service(30)
@@ -69,6 +75,9 @@ config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLL_IN
 ```
 
 in this case it is configured for requesting an update every 30 seconds.
+
+Each polling request times out after 12 seconds, which can be changed (in seconds) with the environment variable
+`FEATUREHUB_POLLING_TIMEOUT`.
 
 #### 3. Check FeatureHub Repository readiness and request feature state
 
