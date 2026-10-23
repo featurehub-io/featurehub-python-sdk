@@ -102,6 +102,10 @@ class PollingEdgeService(EdgeService):
             resp = self._http.request(method='GET', url=url, headers=headers, timeout=self._timeout)
             log.debug("polling status %s", resp.status)
 
+            with self._cond:
+                if self._cancel:  # closed while the request was in flight, so the response is no longer wanted
+                    return
+
             if resp.status == 200 or resp.status == 236:
                 self._process_successful_results(json.loads(resp.data.decode('utf-8')))
 
@@ -136,7 +140,9 @@ class PollingEdgeService(EdgeService):
         elif resp.status == 503:
             # dacha is busy, just wait
             return
-        # otherwise its likely a transient failure, so keep trying
+        else:
+            # otherwise its likely a transient failure, so keep trying
+            log.error("featurehub returned unexpected status %s", resp.status)
 
     def _cache_control_polling_interval(self, cache_control: str):
         max_age = re.findall(self._cache_control_pattern, cache_control)
@@ -175,10 +181,11 @@ class PollingEdgeService(EdgeService):
                 self._cond.notify_all()
 
     # must be called holding self._cond. decides whether the worker should stop, and if so clears _worker in the same
-    # locked block, so a request can't slip in between and find a worker that is about to exit and never serves it
+    # locked block, so a request can't slip in between and find a worker that is about to exit and never serves it.
+    # a stale environment still serves fetches already asked for (a context change), it just doesn't poll
     def _finished(self) -> bool:
         pending = self._requested > self._completed
-        if self._cancel or self._stopped or (not pending and self._interval <= 0):
+        if self._cancel or (not pending and (self._stopped or self._interval <= 0)):
             self._worker = None
             self._cond.notify_all()
             return True
@@ -197,9 +204,10 @@ class PollingEdgeService(EdgeService):
                 self._wakeup.clear()
             self._wakeup.wait(remaining)
 
-    # must be called holding self._cond. returns the request number to wait for, or None if polling has stopped
-    def _request_fetch(self) -> Optional[int]:
-        if self._cancel or self._stopped:
+    # must be called holding self._cond. returns the request number to wait for, or None if polling has stopped.
+    # even_if_stopped fetches once even though the environment is stale
+    def _request_fetch(self, even_if_stopped: bool = False) -> Optional[int]:
+        if self._cancel or (self._stopped and not even_if_stopped):
             return None
         self._requested += 1
         self._wakeup.set()
@@ -236,13 +244,21 @@ class PollingEdgeService(EdgeService):
             self._wakeup.set()
             self._cond.notify_all()
 
+    # the caller has marked the repository not ready, so this always fetches for a new context - even if polling was
+    # closed or the environment is stale (server evaluated features differ per context) - or reports the failure
     async def context_change(self, header: str):
         with self._cond:
             old_context = self._context
             self._context = header
             self._sha_context = sha256(header.encode('utf-8')).hexdigest()
-            request = self._request_fetch() if old_context != header else None
-        if request is None:
+            if old_context == header:
+                return
+            invalid_key = self._invalid_key
+            if not invalid_key:
+                self._cancel = False
+                request = self._request_fetch(even_if_stopped=True)
+        if invalid_key:  # don't try again with a key the server rejected (404), but don't leave it not ready either
+            self._repository.notify("failed", None)
             return
         await asyncio.to_thread(self._wait_for_fetch, request)
 

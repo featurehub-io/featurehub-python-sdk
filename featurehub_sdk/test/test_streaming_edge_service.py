@@ -33,6 +33,13 @@ class StreamingRetryDelayTest(TestCase):
         self.assertEqual(thread._initial_retry_delay, _StreamingThread.INITIAL_RETRY_DELAY)
         self.assertEqual(thread._max_retry_delay, _StreamingThread.MAX_RETRY_DELAY)
 
+    def test_infinite_or_huge_values_are_ignored_or_capped(self):
+        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "inf",
+                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "1e300"}, clear=True):
+            thread = _thread()
+        self.assertEqual(thread._initial_retry_delay, _StreamingThread.INITIAL_RETRY_DELAY)
+        self.assertEqual(thread._max_retry_delay, threading.TIMEOUT_MAX)
+
     def test_max_is_never_below_initial(self):
         with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "60",
                                      "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "10"}, clear=True):
@@ -140,6 +147,40 @@ class StreamingReconnectTest(TestCase):
         timeout = thread._http.request.call_args.kwargs['timeout']
         self.assertEqual(timeout.connect_timeout, _StreamingThread.CONNECT_TIMEOUT)
         self.assertEqual(timeout.read_timeout, 90.0)
+
+    def test_closed_while_connecting_does_not_read_the_stream(self):
+        repo = MagicMock()
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+        resp = _sse_response(b"event: features\ndata: []\n\n")
+
+        def connect(*args, **kwargs):
+            thread.close()
+            return resp
+
+        thread._http = MagicMock()
+        thread._http.request.side_effect = connect
+        thread.run()
+        repo.notify.assert_not_called()
+        resp.release_conn.assert_called()
+
+    def test_no_events_are_applied_once_closed(self):
+        repo = MagicMock()
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+
+        def chunks():
+            yield b"event: features\ndata: []\n\n"
+            thread._cancel = True  # closed while the next event was being read
+            yield b"event: feature\ndata: {\"id\":\"1\"}\n\n"
+
+        resp = MagicMock(name="sse-response")
+        resp.status = 200
+        resp.__iter__.return_value = chunks()
+        thread._http = MagicMock()
+        thread._http.request.return_value = resp
+        thread.run()
+        self.assertEqual(repo.notify.call_count, 1)
 
     def test_close_does_not_close_a_finished_connection(self):
         with patch.dict(os.environ, {}, clear=True):

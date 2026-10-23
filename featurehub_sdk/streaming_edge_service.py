@@ -69,9 +69,13 @@ class _StreamingThread(threading.Thread):
                     headers.pop('Last-Event-Id', None)
                 resp = self._http.request('GET', self._url, preload_content=False, headers=headers,
                                           timeout=self._timeout)
+                if self._cancel:  # closed while connecting, before there was a client for close() to close
+                    break
                 if resp.status == 200:
                     self._client = sseclient.SSEClient(resp)
                     for event in self._client.events():
+                        if self._cancel or self._stopped:  # no events once closed, while a new stream may be starting
+                            break
                         # only a stream that delivers the features counts as recovered - a server or proxy that
                         # accepts and immediately drops the connection, or sends anything else, keeps backing off
                         if event.event == 'features':

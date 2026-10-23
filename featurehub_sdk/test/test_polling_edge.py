@@ -278,10 +278,67 @@ class PollingEdgeServiceTest(TestCase):
             asyncio.run(poller.poll())
             self.assertTrue(poller.stopped)
             asyncio.run(poller.poll())
-            asyncio.run(poller.context_change("userkey=a"))
             poller.update_interval(30)
             self.assertEqual(http_class_mock.return_value.request.call_count, 1)
             self.assertIsNone(poller._worker)
+
+    def test_context_change_fetches_once_when_stale(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '[]', status=236)
+            asyncio.run(poller.poll())
+            # server evaluated features differ per context, so a new context is fetched even though polling stopped
+            asyncio.run(poller.context_change("userkey=a"))
+            self.assertEqual(http_class_mock.return_value.request.call_count, 2)
+            self.assertEqual(http_class_mock.return_value.request.call_args.kwargs['headers']['x-featurehub'],
+                             'userkey=a')
+            worker = poller._worker
+            if worker:
+                worker.join(1)
+            self.assertIsNone(poller._worker)  # and it doesn't go back to polling
+
+    def test_context_change_after_close_fetches(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '[]')
+            asyncio.run(poller.poll())
+            poller.close()
+            asyncio.run(poller.context_change("userkey=a"))
+            try:
+                self.assertEqual(http_class_mock.return_value.request.call_count, 2)
+            finally:
+                poller.close()
+
+    def test_context_change_with_invalid_key_reports_failure(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '', status=404)
+            asyncio.run(poller.poll())
+            repo.reset_mock()
+            asyncio.run(poller.context_change("userkey=a"))
+            repo.notify.assert_called_once_with("failed", None)
+            self.assertEqual(http_class_mock.return_value.request.call_count, 1)
+
+    def test_response_after_close_is_ignored(self):
+        def request_then_close(**kwargs):
+            poller.close()
+            resp = MagicMock(name="http-response")
+            resp.status = 200
+            resp.headers = {'etag': '"abc"'}
+            resp.data.decode.return_value = '[{"features":[{"a":1}]}]'
+            return resp
+
+        with patch("urllib3.PoolManager") as http_class_mock:
+            http_class_mock.return_value.request.side_effect = request_then_close
+            repo = MagicMock(spec=FeatureHubRepository)
+            poller = PollingEdgeService('http://localhost', ['123'], repo, 30)
+            asyncio.run(poller.poll())
+            repo.notify.assert_not_called()
+            self.assertIsNone(poller._etag)
+
+    def test_unexpected_status_is_logged(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller, repo = self._poller_returning(http_class_mock, '', status=403, interval=0)
+            with self.assertLogs('featurehub_sdk', level='ERROR') as logs:
+                asyncio.run(poller.poll())
+            self.assertIn("unexpected status 403", logs.output[0])
 
     def test_close_after_invalid_key_does_not_resume_polling(self):
         with patch("urllib3.PoolManager") as http_class_mock:
