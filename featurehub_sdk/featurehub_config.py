@@ -2,11 +2,12 @@ from __future__ import annotations  # so we can reference ourselves
 
 import typing
 import os
+import re
 import logging
 
 from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContext, ServerEvalFeatureContext, \
     InternalFeatureRepository
-from featurehub_sdk.edge_service import EdgeService
+from featurehub_sdk.edge_service import EdgeService, parse_duration
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from typing import Dict, List, Callable, Optional
 from featurehub_sdk.polling_edge_service import PollingEdgeService, validate_poll_interval
@@ -16,20 +17,45 @@ log = logging.getLogger('featurehub_sdk')
 
 DEFAULT_POLL_INTERVAL = 30
 
-
-# the polling interval from FEATUREHUB_POLL_INTERVAL, or 30 seconds
-def _env_poll_interval() -> int:
-    value = os.environ.get("FEATUREHUB_POLL_INTERVAL")
-    if value is None:
-        return DEFAULT_POLL_INTERVAL
-    return _parse_poll_interval(value)
+POLLING_INTERVAL_ENV = "FEATUREHUB_POLLING_INTERVAL"
+POLLING_PASSIVE_ENV = "FEATUREHUB_POLLING_PASSIVE"
+# the 1.x name for FEATUREHUB_POLLING_INTERVAL, still read if the new one isn't set
+_DEPRECATED_POLL_INTERVAL_ENV = "FEATUREHUB_POLL_INTERVAL"
 
 
-def _parse_poll_interval(value: str) -> int:
+# the polling interval set in the environment (FEATUREHUB_POLLING_INTERVAL, or the 1.x FEATUREHUB_POLL_INTERVAL), in
+# seconds, or None if neither is set. raises ValueError if it isn't a valid interval
+def _env_poll_interval_if_set() -> Optional[float]:
+    for name in (POLLING_INTERVAL_ENV, _DEPRECATED_POLL_INTERVAL_ENV):
+        value = (os.environ.get(name) or '').strip()
+        if value:
+            if name == _DEPRECATED_POLL_INTERVAL_ENV:
+                log.warning("%s is deprecated, use %s instead (with a unit, e.g. %ss)", _DEPRECATED_POLL_INTERVAL_ENV,
+                            POLLING_INTERVAL_ENV, value)
+                return _parse_poll_interval(name, value, seconds_without_unit=True)
+            return _parse_poll_interval(name, value)
+    return None
+
+
+# the polling interval from the environment, or 30 seconds
+def _env_poll_interval() -> float:
+    interval = _env_poll_interval_if_set()
+    return DEFAULT_POLL_INTERVAL if interval is None else interval
+
+
+# seconds_without_unit: the 1.x FEATUREHUB_POLL_INTERVAL was a number of seconds, so it still is
+def _parse_poll_interval(name: str, value: str, seconds_without_unit: bool = False) -> float:
     try:
-        return int(value)
+        seconds = float(value) if seconds_without_unit and re.fullmatch(r'\s*\d+(\.\d+)?\s*', value) \
+            else parse_duration(value)
     except ValueError:
-        raise ValueError(f"FEATUREHUB_POLL_INTERVAL must be a whole number of seconds, not {value!r}")
+        raise ValueError(f"{name} must be a duration with a unit, such as 30s or 1m, not {value!r}")
+    seconds = int(seconds) if float(seconds).is_integer() else seconds
+    try:
+        validate_poll_interval(seconds)
+    except ValueError as e:
+        raise ValueError(f"{name}={value!r}: {e}")
+    return seconds
 
 
 class FeatureHubConfig:
@@ -129,29 +155,39 @@ class FeatureHubConfig:
 
     # this is just an internal function that creates the default edge service if the user hasn't provided one (which
     # will be 90% of the time)
-    # client evaluated keys stream. a server evaluated key has no default: this SDK doesn't send the context over
-    # streaming, so it must poll, chosen with use_polling_edge_service() or by setting FEATUREHUB_POLL_INTERVAL
+    # chosen from the environment, as the Go SDK does, in this order:
+    # - FEATUREHUB_POLLING_PASSIVE set (any value): passive polling, at FEATUREHUB_POLLING_INTERVAL if set, else 0
+    #   (fetch once, at start)
+    # - FEATUREHUB_POLLING_INTERVAL set: active polling at that interval
+    # - otherwise a client evaluated key streams. a server evaluated key has no default: this SDK doesn't send the
+    #   context over streaming, so it must poll, chosen with use_polling_edge_service() or the variables above
     def _create_default_provider(self, repository: InternalFeatureRepository, api_keys: List[str],
                                  edge_url: str) -> EdgeService:
+        env_interval = _env_poll_interval_if_set()
+        if (os.environ.get(POLLING_PASSIVE_ENV) or '').strip():
+            interval = 0 if env_interval is None else env_interval
+            return PollingEdgeService(edge_url, api_keys, repository, interval, self._headers, passive=True)
+
+        if env_interval is not None:
+            return PollingEdgeService(edge_url, api_keys, repository, env_interval, self._headers)
+
         if self._client_eval:
             return StreamingEdgeClient(edge_url, api_keys, repository, self._headers)
 
-        env_interval = os.environ.get("FEATUREHUB_POLL_INTERVAL")
-        if env_interval is None:
-            raise ValueError("a server evaluated API key must poll: call use_polling_edge_service() or set "
-                             "FEATUREHUB_POLL_INTERVAL")
-        return PollingEdgeService(edge_url, api_keys, repository, _parse_poll_interval(env_interval), self._headers)
+        raise ValueError("a server evaluated API key must poll: call use_polling_edge_service(), or set "
+                         f"{POLLING_INTERVAL_ENV} or {POLLING_PASSIVE_ENV}")
 
     # interval is in seconds: 0 polls once, otherwise it must be at least 5. defaults to the environment variable
-    # FEATUREHUB_POLL_INTERVAL, or 30
-    def use_polling_edge_service(self, interval: Optional[int] = None):
+    # FEATUREHUB_POLLING_INTERVAL, or 30. passive polls only when features are read and are older than the interval,
+    # rather than on a timer
+    def use_polling_edge_service(self, interval: Optional[int] = None, passive: bool = False):
         if interval is None:
             interval = _env_poll_interval()
         validate_poll_interval(interval)
         headers = self._headers
         self.edge_service_provider(lambda repository, api_keys,
                                           edge_url: PollingEdgeService(edge_url, api_keys, repository, interval,
-                                                                       headers))
+                                                                       headers, passive=passive))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()

@@ -18,16 +18,13 @@ FIXTURE = json.loads((Path(__file__).parent / 'fixtures' / 'typescript_golden.js
 # a TypeScript bug the specification says implementations MUST NOT reproduce (golden_fixture.known_typescript_bugs)
 KNOWN_TYPESCRIPT_BUGS = {'empty strategy first'}
 
-_PLAIN_NUMBER = re.compile(r'[+-]?\d+(\.\d+)?')
 _VERSION_PART = re.compile(r'\d+')
 
 
-# this SDK deliberately doesn't parse numbers in strings with JavaScript's rules (parseInt/parseFloat prefixes, Number()
-# of "", " 1", "0x1f", exponents), so the fixture's cases that depend on them are skipped until the specification
-# stops relying on them
+# semantic versions compare each part as a decimal number here, not with JavaScript's Number() (which reads "" as 0 and
+# accepts " 1" or "0x1f"), so the fixture's cases that depend on it are skipped until the specification stops
+# relying on it
 def depends_on_javascript_number_parsing(case) -> bool:
-    if case['type'] == 'NUMBER':
-        return any(isinstance(v, str) and not _PLAIN_NUMBER.fullmatch(v) for v in [case['supplied'], *case['values']])
     if case['type'] == 'SEMANTIC_VERSION':
         for v in [case['supplied'], *case['values']]:
             parts = str(v).split('.')[:3]
@@ -97,7 +94,7 @@ class GoldenFixtureTest(unittest.TestCase):
             if got != expected:
                 failures.append({**case, 'got': got})
         self._assert_no_failures(failures, checked)
-        # skipping the JavaScript number parsing cases still checks every field type with every conditional
+        # skipping the cases relying on JavaScript's Number() still checks every field type with every conditional
         self.assertEqual(len(combinations), 77)
 
     def test_apply(self):

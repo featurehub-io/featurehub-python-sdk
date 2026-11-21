@@ -1,0 +1,189 @@
+name: e2e-tests
+
+# end to end tests: runs the example app (Dockerfile, example/) against a FeatureHub party server and drives it with
+# the JavaScript SDK's todo-server tests, once streaming and once polling.
+#
+# It starts on every pull request (and each push to one), but waits for approval before running anything: the job uses
+# the `e2e` environment, whose required reviewers approve it from the pull request's checks or the Actions tab. Waiting
+# for approval, or failing, never blocks a merge, as long as `e2e-tests` is not added to the required checks of a
+# branch protection rule or ruleset (only checks named there are enforced). A newer push cancels a run still waiting.
+#
+# Setup (once): Settings -> Environments -> New environment `e2e`, tick "Required reviewers" and add who may approve;
+# and add the `GHCR_TOKEN` secret (read access to the FeatureHub packages) to the repository or the environment.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: e2e-tests
+    # the environment's required reviewers must approve each run before it starts
+    environment: e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read # to pull the FeatureHub images from GHCR
+    services:
+      partyserver:
+        image: featurehub/party-server:latest
+        ports:
+          - 8085:8085
+          - 8701:8701
+    env:
+      FEATUREHUB_BASE_URL: http://partyserver:8085
+      FEATUREHUB_EDGE_URL: http://partyserver:8085
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Wait for party-server to be ready
+        run: |
+          echo "Waiting for party-server on port 8085..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8701/health/liveness > /dev/null 2>&1; then
+              echo "party-server is ready"
+              exit 0
+            fi
+            echo "  attempt $i/60 - not ready yet, retrying in 2s"
+            sleep 2
+          done
+          echo "party-server did not become ready in time"
+          exit 1
+
+      - name: Set up FeatureHub and write the env file the todo-server needs
+        run: |
+          mkdir adk-env
+          docker run --rm \
+            --network ${{ job.container.network }} \
+            -v $PWD/adk-env:/opt/e2e \
+            -e WRITE_ENV_FOR_E2E=/opt/e2e/server.env \
+            -e DEBUG=true \
+            -e FEATUREHUB_BASE_URL \
+            -e FEATUREHUB_EDGE_URL \
+            --name featurehub-setup \
+            ghcr.io/featurehub-io/featurehub-io/featurehub:main-adk-e2e \
+            /bin/bash -c "env && pnpm run test --tags '@demoexamples'"
+          ls -l adk-env
+
+      - name: Verify server.env exists and is non-empty
+        run: |
+          if [ ! -s adk-env/server.env ]; then
+            echo "server.env is missing or empty"
+            exit 1
+          fi
+          echo "server.env contents:"
+          cat adk-env/server.env
+          # the example uses the client evaluated key
+          grep -v FEATUREHUB_SERVER_API_KEY adk-env/server.env > adk-env/client.env
+
+      - name: Build todo-server image
+        run: docker build -t todo-server:e2e .
+
+      - name: Run todo-server in streaming mode (the default)
+        run: |
+          docker run -d \
+            --network ${{ job.container.network }} \
+            --name todo-server \
+            -p 8099:8099 \
+            --env-file adk-env/client.env \
+            todo-server:e2e
+
+      - name: Wait for todo-server to be ready
+        run: |
+          echo "Waiting for todo-server on port 8099..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8099/health/readiness > /dev/null 2>&1; then
+              echo "todo-server is ready"
+              exit 0
+            fi
+            echo "  attempt $i/30 - not ready yet, retrying in 2s"
+            sleep 2
+          done
+          echo "todo-server did not become ready in time"
+          docker logs todo-server
+          exit 1
+
+      - name: Run the JavaScript todo-server tests against streaming
+        # this step can hang, so force a timeout
+        timeout-minutes: 10
+        run: |
+          docker run --rm \
+            --network ${{ job.container.network }} \
+            -v $PWD/adk-env:/opt/e2e \
+            -e APP_SERVER_URL=http://todo-server:8099 \
+            --env-file adk-env/client.env \
+            --name jsdk-sse-client \
+            ghcr.io/featurehub-io/featurehub-javascript-sdk:main \
+            /bin/bash -c "cd examples/todo-server-tests && pnpm run test"
+
+      - name: Run todo-server again in polling mode
+        # this SDK's polling interval must be at least 5 seconds
+        run: |
+          docker rm -f todo-server
+          docker run -d \
+            --network ${{ job.container.network }} \
+            -e FEATUREHUB_POLLING_INTERVAL=5s \
+            --name todo-server \
+            -p 8099:8099 \
+            --env-file adk-env/client.env \
+            todo-server:e2e
+
+      - name: Wait for todo-server to be ready again
+        run: |
+          echo "Waiting for todo-server on port 8099..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8099/health/readiness > /dev/null 2>&1; then
+              echo "todo-server is ready"
+              exit 0
+            fi
+            echo "  attempt $i/30 - not ready yet, retrying in 2s"
+            sleep 2
+          done
+          echo "todo-server did not become ready in time"
+          docker logs todo-server
+          exit 1
+
+      - name: Run the JavaScript todo-server tests against polling
+        # the JavaScript tests read FEATUREHUB_POLLING_INTERVAL in milliseconds, to wait long enough for the todo-server
+        # to poll (and poll themselves at that interval)
+        timeout-minutes: 10
+        run: |
+          docker run --rm \
+            --network ${{ job.container.network }} \
+            -v $PWD/adk-env:/opt/e2e \
+            -e FEATUREHUB_POLLING_INTERVAL=5000 \
+            -e APP_SERVER_URL=http://todo-server:8099 \
+            --env-file adk-env/client.env \
+            --name jsdk-poll-client \
+            ghcr.io/featurehub-io/featurehub-javascript-sdk:main \
+            /bin/bash -c "cd examples/todo-server-tests && pnpm run test"
+
+      - name: Print logs on failure
+        if: failure()
+        run: |
+          echo "=== party-server logs ==="
+          docker logs ${{ job.services.partyserver.id }} 2>/dev/null || true
+          echo "=== todo-server logs ==="
+          docker logs todo-server 2>/dev/null || true
+
+      - name: Tear down
+        if: always()
+        run: docker rm -f todo-server featurehub-setup jsdk-sse-client jsdk-poll-client 2>/dev/null || true

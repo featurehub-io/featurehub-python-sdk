@@ -9,7 +9,7 @@ import logging
 import sys
 
 from featurehub_sdk.client_context import InternalFeatureRepository
-from featurehub_sdk.edge_service import EdgeService, _env_seconds, _request_headers
+from featurehub_sdk.edge_service import EdgeService, _env_number, _env_seconds, _request_headers
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger('featurehub_sdk')
@@ -37,14 +37,14 @@ class _StreamingThread(threading.Thread):
     _headers: Dict[str, str]
 
     # delay (in seconds) before reconnecting after a failure, multiplied on each consecutive failure up to the max.
-    # overridden by FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY, FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER and
-    # FEATUREHUB_STREAMING_MAX_RETRY_DELAY
+    # overridden by FEATUREHUB_SSE_INITIAL_RETRY_DELAY, FEATUREHUB_SSE_BACKOFF_MULTIPLIER and
+    # FEATUREHUB_SSE_MAX_RETRY_DELAY
     INITIAL_RETRY_DELAY = 1.0
     BACKOFF_MULTIPLIER = 2.0
     MAX_RETRY_DELAY = 30.0
     # how long (in seconds) to wait to connect, and for the next data on an open stream, before reconnecting - so a
-    # dropped or half-open connection doesn't block forever. overridden by FEATUREHUB_STREAMING_CONNECT_TIMEOUT and
-    # FEATUREHUB_STREAMING_READ_TIMEOUT. the read timeout must be longer than the server keeps a quiet stream open
+    # dropped or half-open connection doesn't block forever. overridden by FEATUREHUB_SSE_CONNECT_TIMEOUT and
+    # FEATUREHUB_SSE_READ_TIMEOUT. the read timeout must be longer than the server keeps a quiet stream open
     CONNECT_TIMEOUT = 12.0
     READ_TIMEOUT = 60.0
 
@@ -59,16 +59,16 @@ class _StreamingThread(threading.Thread):
         self._stopped = False
         self._failed = False
         self._wakeup = threading.Event()
-        self._initial_retry_delay = max(_env_seconds('FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY',
+        self._initial_retry_delay = max(_env_seconds('FEATUREHUB_SSE_INITIAL_RETRY_DELAY',
                                                      self.INITIAL_RETRY_DELAY), _MIN_RECONNECT_DELAY)
-        self._max_retry_delay = max(_env_seconds('FEATUREHUB_STREAMING_MAX_RETRY_DELAY', self.MAX_RETRY_DELAY),
+        self._max_retry_delay = max(_env_seconds('FEATUREHUB_SSE_MAX_RETRY_DELAY', self.MAX_RETRY_DELAY),
                                     self._initial_retry_delay)
-        self._backoff_multiplier = _env_seconds('FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER', self.BACKOFF_MULTIPLIER)
+        self._backoff_multiplier = _env_number('FEATUREHUB_SSE_BACKOFF_MULTIPLIER', self.BACKOFF_MULTIPLIER)
         if self._backoff_multiplier < 1:  # it must back off, so the delay never shrinks
-            log.warning("ignoring FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER below 1, using %s", self.BACKOFF_MULTIPLIER)
+            log.warning("ignoring FEATUREHUB_SSE_BACKOFF_MULTIPLIER below 1, using %s", self.BACKOFF_MULTIPLIER)
             self._backoff_multiplier = self.BACKOFF_MULTIPLIER
-        self._timeout = urllib3.Timeout(connect=_env_seconds('FEATUREHUB_STREAMING_CONNECT_TIMEOUT', self.CONNECT_TIMEOUT),
-                                        read=_env_seconds('FEATUREHUB_STREAMING_READ_TIMEOUT', self.READ_TIMEOUT))
+        self._timeout = urllib3.Timeout(connect=_env_seconds('FEATUREHUB_SSE_CONNECT_TIMEOUT', self.CONNECT_TIMEOUT),
+                                        read=_env_seconds('FEATUREHUB_SSE_READ_TIMEOUT', self.READ_TIMEOUT))
         self._http = urllib3.PoolManager()
 
     def run(self):

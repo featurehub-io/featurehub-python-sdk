@@ -32,7 +32,7 @@ def validate_poll_interval(interval) -> None:
 
 class PollingEdgeService(EdgeService):
     # how long (in seconds) a request to the server may take before it is abandoned, overridden by
-    # FEATUREHUB_POLLING_TIMEOUT
+    # FEATUREHUB_POLLING_REQ_TIMEOUT
     TIMEOUT = 12.0
 
     _interval: int
@@ -54,15 +54,24 @@ class PollingEdgeService(EdgeService):
     _headers: Dict[str, str]
     _started: bool
     _single_fetch: bool
+    _passive: bool
+    _last_fetch: Optional[float]
 
     # headers are extra headers sent with every request (e.g. for an API gateway); the SDK's own headers win over
-    # any of the same name
+    # any of the same name.
+    # active polling (the default) fetches every interval. passive polling doesn't use a timer: after the first fetch,
+    # it fetches again only when features are read (refresh_if_stale) and the last fetch is older than the interval;
+    # with an interval of 0 it never fetches again
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: FeatureHubRepository,
                  interval: int,
-                 headers: Optional[Dict[str, str]] = None):
+                 headers: Optional[Dict[str, str]] = None,
+                 passive: bool = False):
         validate_poll_interval(interval)
         self._interval = interval
+        self._passive = passive
+        # when the last fetch finished (successful or not), so passive polling knows how old the features are
+        self._last_fetch = None
         self._headers = dict(headers) if headers else {}
         self._repository = repository
         self._cancel = False
@@ -84,7 +93,7 @@ class PollingEdgeService(EdgeService):
         self._started = False
         # closed, but fetching once for a context change: once that is done it is closed again
         self._single_fetch = False
-        self._timeout = _env_seconds('FEATUREHUB_POLLING_TIMEOUT', self.TIMEOUT)
+        self._timeout = _env_seconds('FEATUREHUB_POLLING_REQ_TIMEOUT', self.TIMEOUT)
         self._http = urllib3.PoolManager()
         self._cache_control_pattern = re.compile('max-age=(\\d+)')
 
@@ -99,6 +108,10 @@ class PollingEdgeService(EdgeService):
             # polling stopped by a rejected key or a stale environment stays stopped, and polling that hasn't been
             # started yet (by poll() or init()) isn't started by changing its interval
             if self._invalid_key or self._stopped or not self._started:
+                return
+            if self._passive:  # nothing is scheduled: the next read uses the new interval
+                self._cancel = False
+                self._single_fetch = False
                 return
             if self._cancel or self._single_fetch:  # close() stopped polling, so start it again
                 self._cancel = False
@@ -210,6 +223,7 @@ class PollingEdgeService(EdgeService):
 
                 with self._cond:
                     self._completed = covers
+                    self._last_fetch = time.monotonic()
                     self._cond.notify_all()
                     if self._finished():
                         return
@@ -224,10 +238,12 @@ class PollingEdgeService(EdgeService):
 
     # must be called holding self._cond. decides whether the worker should stop, and if so clears _worker in the same
     # locked block, so a request can't slip in between and find a worker that is about to exit and never serves it.
-    # a stale environment requests nothing more, not even fetches already asked for
+    # a stale environment requests nothing more, not even fetches already asked for. passive polling schedules nothing,
+    # so its worker stops once the fetches asked for are done
     def _finished(self) -> bool:
         pending = self._requested > self._completed
-        if self._cancel or self._stopped or (not pending and (self._interval <= 0 or self._single_fetch)):
+        if self._cancel or self._stopped or \
+                (not pending and (self._interval <= 0 or self._single_fetch or self._passive)):
             if self._single_fetch:  # the context change's fetch after close() is done, so it is closed again
                 self._single_fetch = False
                 self._cancel = True
@@ -266,14 +282,36 @@ class PollingEdgeService(EdgeService):
         with self._cond:
             self._cond.wait_for(lambda: self._completed >= request or self._worker is None or self._cancel)
 
+    # must be called holding self._cond. passive polling: whether the features are older than the interval (or have
+    # never been fetched) and nothing is being fetched. a failed fetch counts too, so it isn't retried before the
+    # interval is up
+    def _needs_refresh(self) -> bool:
+        if self._cancel or self._stopped or self._invalid_key or self._requested > self._completed:
+            return False
+        if self._last_fetch is None:
+            return True
+        return self._interval > 0 and time.monotonic() - self._last_fetch >= self._interval
+
+    # passive polling: called as features are read. fetches in the background if the features are older than the
+    # interval, without waiting for it. does nothing for active polling, or before polling has been started
+    def refresh_if_stale(self):
+        if not self._passive:
+            return
+        with self._cond:
+            if self._started and self._needs_refresh():
+                self._request_fetch()
+
     # fetches the features (on the worker thread) and waits for them, starting polling if it isn't running.
-    # if the interval is zero, this will just issue a get updates and stop
+    # if the interval is zero, this will just issue a get updates and stop. passive polling only fetches the first
+    # time, and then whenever the features are older than the interval
     async def poll(self):
         with self._cond:
             if self._invalid_key:  # don't try again with a key the server rejected (404)
                 return
             self._cancel = False
             self._single_fetch = False
+            if self._passive and self._started and not self._needs_refresh():
+                return
             self._started = True
             request = self._request_fetch()
         if request is None:  # the environment is stale, so the server told us to stop asking
@@ -323,6 +361,10 @@ class PollingEdgeService(EdgeService):
     @property
     def stopped(self):
         return self._stopped
+
+    @property
+    def passive(self):
+        return self._passive
 
     @property
     def interval(self):

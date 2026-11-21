@@ -26,13 +26,22 @@ specifications. Most applications need no code changes, but go through these ste
    config.use_polling_edge_service(30)  # poll every 30 seconds
    ```
 
-   or set the environment variable `FEATUREHUB_POLL_INTERVAL` (for example `FEATUREHUB_POLL_INTERVAL=30`). If you
+   or set the environment variable `FEATUREHUB_POLLING_INTERVAL` (for example `FEATUREHUB_POLLING_INTERVAL=30s`). If you
    create a `StreamingEdgeClient` yourself (for example in a custom edge provider), it now raises a `ValueError` for a
-   Server Evaluated key. Client Evaluated keys (those containing `*`) are not affected and still stream by default.
+   Server Evaluated key. Client Evaluated keys (those containing `*`) still stream by default.
+
+   The environment variables now use the same names, and the same duration format, as the other FeatureHub SDKs.
+   The 1.x `FEATUREHUB_POLL_INTERVAL` (a number of seconds) is now `FEATUREHUB_POLLING_INTERVAL`, whose value needs a
+   unit: `FEATUREHUB_POLL_INTERVAL=30` becomes `FEATUREHUB_POLLING_INTERVAL=30s`. The old name is still read, as
+   seconds, if the new one isn't set, with a deprecation warning.
+
+   `FEATUREHUB_POLLING_INTERVAL` now chooses polling for any key: if it is set, a Client Evaluated key polls too, unless
+   your code chooses the edge service itself. In 1.x it only set the default interval for `use_polling_edge_service()`,
+   so if you set it for that reason but want a Client Evaluated key to stream, unset it and pass the interval in code.
 
 3. **Check your polling intervals.** An interval must be `0` (poll once) or at least 5 seconds; anything else raises a
    `ValueError`. Check calls to `use_polling_edge_service()` and `update_interval()`, `PollingEdgeService` if you create
-   it yourself, and the `FEATUREHUB_POLL_INTERVAL` environment variable in every environment you deploy to. A
+   it yourself, and the `FEATUREHUB_POLLING_INTERVAL` environment variable in every environment you deploy to. A
    `Cache-Control: max-age` from the server below 5 seconds is raised to 5.
 
 4. **Check how you use `is_ready()`.** It is now true whenever features are held, including:
@@ -57,8 +66,9 @@ specifications. Most applications need no code changes, but go through these ste
    - use **`DATE` or `DATETIME`** attributes. Values are now converted to UTC before being compared (a date-time
      without an offset is local time), and if the context doesn't supply the attribute at all, today's date (or now)
      is used.
-   - use **`NUMBER`** attributes with values your application supplies as strings. A string that isn't a plain number
-     (such as `"12abc"`) no longer matches anything.
+   - use **`NUMBER`** attributes with values your application supplies as strings. Only a string that is exactly a
+     decimal number (`"12"`, `"-0.5"`, `"+7"`) is a number: `"12abc"`, `"1e3"`, `" 3"`, `".5"` or `"Infinity"` is not,
+     and never matches - not even `NOT_EQUALS`. Pass Python numbers where you can.
    - compare an attribute (other than a `DATE` or `DATETIME`) that the context doesn't supply. It now never matches,
      even if the strategy has no values for it.
 
@@ -79,8 +89,9 @@ specifications. Most applications need no code changes, but go through these ste
    dependencies.
 
 New in 2.0 and optional to adopt: extra headers for every request to FeatureHub
-(`FeatureHubConfig(..., headers={...})`), readiness and failure listeners, and a configurable streaming backoff
-(`FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER`). See [CHANGELOG.md](CHANGELOG.md) for everything that changed.
+(`FeatureHubConfig(..., headers={...})`), readiness and failure listeners, passive polling
+(`FEATUREHUB_POLLING_PASSIVE` or `use_polling_edge_service(interval, passive=True)`), and a configurable streaming backoff
+(`FEATUREHUB_SSE_BACKOFF_MULTIPLIER`). See [CHANGELOG.md](CHANGELOG.md) for everything that changed.
 
 ## Options to get feature updates
 
@@ -94,7 +105,7 @@ There are 2 ways to request for feature updates via this SDK:
 
 - **FeatureHub polling client (GET request updates)**
 
-    In this mode you can set an interval of 0 (poll just once) or any number of seconds from 5 upwards between polling. This is more useful for when you have short term single threaded
+    In this mode you can set an interval of 0 (poll just once) or anything from 5 seconds upwards between polling. This is more useful for when you have short term single threaded
     processes like command line tools. Batch tools that iterate over data sets and wish to control when updates happen can also benefit from this method.
 
 ## Example
@@ -134,15 +145,26 @@ asyncio.run(config.init()) # run async command in sync
 
 ```
 
-By default, this SDK will use SSE client for a Client Evaluated API Key. A Server Evaluated API Key has no default: you
-must choose polling, either with `config.use_polling_edge_service()` (below) or by setting the environment variable
-`FEATUREHUB_POLL_INTERVAL`, otherwise a `ValueError` is raised when the config is initialised. If the SSE connection fails, it reconnects
-after a delay that starts at 1 second and doubles on each consecutive failure up to 30 seconds. These can be changed
-with the environment variables `FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY` and `FEATUREHUB_STREAMING_MAX_RETRY_DELAY`
-(in seconds, at least 0.1) and `FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER` (at least 1). It reconnects if connecting takes
-longer than 12 seconds, or if no data arrives on an open stream for 60 seconds; these can be changed (in seconds) with
-`FEATUREHUB_STREAMING_CONNECT_TIMEOUT` and `FEATUREHUB_STREAMING_READ_TIMEOUT`. If FeatureHub rejects the API key (any
-4xx response) it stops for good.
+Unless your code chooses how to get updates (below), the SDK chooses from the environment, in this order:
+
+1. `FEATUREHUB_POLLING_PASSIVE` set (to anything): **passive polling** - features are fetched at start, and then
+   only when they are read and are older than `FEATUREHUB_POLLING_INTERVAL` (if that isn't set, they are fetched once,
+   at start, and never again). Nothing polls in the background.
+2. `FEATUREHUB_POLLING_INTERVAL` set: **polling** at that interval.
+3. Otherwise a Client Evaluated API Key uses **SSE**. A Server Evaluated API Key has no default: you must choose
+   polling, with `config.use_polling_edge_service()` or the variables above, otherwise a `ValueError` is raised when
+   the config is initialised.
+
+Intervals, delays and timeouts in environment variables are durations with a unit, as in the other FeatureHub SDKs:
+`30s`, `1m30s`, `500ms` (`ns`, `us`, `ms`, `s`, `m` and `h` are understood). A value without a unit, such as `30`, is
+invalid, except `0`.
+
+If the SSE connection fails, it reconnects after a delay that starts at 1 second and doubles on each consecutive
+failure up to 30 seconds. These can be changed with the environment variables `FEATUREHUB_SSE_INITIAL_RETRY_DELAY`
+and `FEATUREHUB_SSE_MAX_RETRY_DELAY` (at least 100ms) and `FEATUREHUB_SSE_BACKOFF_MULTIPLIER` (a number, at least 1).
+It reconnects if connecting takes longer than 12 seconds, or if no data arrives on an open stream for 60 seconds;
+these can be changed with `FEATUREHUB_SSE_CONNECT_TIMEOUT` and `FEATUREHUB_SSE_READ_TIMEOUT`. If FeatureHub rejects
+the API key (any 4xx response) it stops for good.
 
 If you need to send extra headers with every request to FeatureHub (for example for an API gateway or a proxy in front
 of it), pass them to the config. The SDK's own headers take precedence over any of the same name.
@@ -156,15 +178,17 @@ If you decide to use FeatureHub polling client, after initialising the config, y
 ```python3
 config.use_polling_edge_service(30)
 # OR
-config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLL_INTERVAL or default of 30 
+config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLLING_INTERVAL or default of 30 
+# OR, to poll only when features are read and are older than the interval
+config.use_polling_edge_service(30, passive=True)
 ```
 
 in this case it is configured for requesting an update every 30 seconds. The interval must be 0 (request once) or at
 least 5 seconds, otherwise a `ValueError` is raised. If FeatureHub responds with a `Cache-Control: max-age`, that
 replaces the interval (but never starts polling again if the interval is 0).
 
-Each polling request times out after 12 seconds, which can be changed (in seconds) with the environment variable
-`FEATUREHUB_POLLING_TIMEOUT`.
+Each polling request times out after 12 seconds, which can be changed with the environment variable
+`FEATUREHUB_POLLING_REQ_TIMEOUT`.
 
 #### 3. Check FeatureHub Repository readiness and request feature state
 

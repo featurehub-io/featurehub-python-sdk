@@ -21,29 +21,46 @@ class StreamingRetryDelayTest(TestCase):
         self.assertEqual(thread._max_retry_delay, _StreamingThread.MAX_RETRY_DELAY)
 
     def test_env_overrides(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "0.5",
-                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "120"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "0.5s",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "120s"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, 0.5)
         self.assertEqual(thread._max_retry_delay, 120.0)
 
+    def test_go_durations_are_accepted(self):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "500ms",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "2m",
+                                     "FEATUREHUB_SSE_READ_TIMEOUT": "1m30s"}, clear=True):
+            thread = _thread()
+        self.assertEqual(thread._initial_retry_delay, 0.5)
+        self.assertEqual(thread._max_retry_delay, 120.0)
+        self.assertEqual(thread._timeout.read_timeout, 90.0)
+
+    def test_durations_without_a_unit_are_invalid(self):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "2",
+                                     "FEATUREHUB_SSE_READ_TIMEOUT": "90"}, clear=True):
+            with self.assertLogs('featurehub_sdk', level='WARNING'):
+                thread = _thread()
+        self.assertEqual(thread._initial_retry_delay, _StreamingThread.INITIAL_RETRY_DELAY)
+        self.assertEqual(thread._timeout.read_timeout, _StreamingThread.READ_TIMEOUT)
+
     def test_invalid_env_values_fall_back_to_defaults(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "soon",
-                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "-5"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "soon",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "-5"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, _StreamingThread.INITIAL_RETRY_DELAY)
         self.assertEqual(thread._max_retry_delay, _StreamingThread.MAX_RETRY_DELAY)
 
     def test_infinite_or_huge_values_are_ignored_or_capped(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "inf",
-                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "1e300"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "inf",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "100000000000h"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, _StreamingThread.INITIAL_RETRY_DELAY)
         self.assertEqual(thread._max_retry_delay, threading.TIMEOUT_MAX)
 
     def test_max_is_never_below_initial(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "60",
-                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "10"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "60s",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "10s"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, 60.0)
         self.assertEqual(thread._max_retry_delay, 60.0)
@@ -159,7 +176,7 @@ class StreamingReconnectTest(TestCase):
         repo.mark_environment_stale.assert_called_once_with()
 
     def test_requests_use_timeouts(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_READ_TIMEOUT": "90"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_READ_TIMEOUT": "90s"}, clear=True):
             thread = _thread()
         _run_until_waits(thread, [_sse_response(b"")], 1)
         timeout = thread._http.request.call_args.kwargs['timeout']
@@ -362,25 +379,25 @@ class StreamingProtocolTest(TestCase):
 
 class StreamingBackoffTest(TestCase):
     def test_multiplier_can_be_configured(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER": "3"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_BACKOFF_MULTIPLIER": "3"}, clear=True):
             thread = _thread()
         delays = _run_until_waits(thread, [_sse_response(b"") for _ in range(4)], 4)
         self.assertEqual(delays, [1.0, 3.0, 9.0, 27.0])
 
     def test_waits_never_exceed_the_maximum(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "5"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_MAX_RETRY_DELAY": "5s"}, clear=True):
             thread = _thread()
         delays = _run_until_waits(thread, [_sse_response(b"") for _ in range(5)], 5)
         self.assertEqual(delays, [1.0, 2.0, 4.0, 5.0, 5.0])
 
     def test_multiplier_below_one_is_ignored(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER": "0.5"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_BACKOFF_MULTIPLIER": "0.5"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._backoff_multiplier, _StreamingThread.BACKOFF_MULTIPLIER)
 
     def test_delay_is_never_below_100ms(self):
-        with patch.dict(os.environ, {"FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY": "0.001",
-                                     "FEATUREHUB_STREAMING_MAX_RETRY_DELAY": "0.001"}, clear=True):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "1ms",
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "1ms"}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, 0.1)
         self.assertEqual(thread._max_retry_delay, 0.1)

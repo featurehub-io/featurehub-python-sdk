@@ -6,19 +6,19 @@
     - build moved from setup.py to pyproject.toml and uv
     - fixes for SSE for last-event-id and making streaming more resilient: it reconnects with an increasing delay
       instead of stopping when the server is unavailable, and a bad event or failing listener no longer drops the stream
-    - added new environment variables for retry delays: FEATUREHUB_STREAMING_INITIAL_RETRY_DELAY and
-      FEATUREHUB_STREAMING_MAX_RETRY_DELAY
+    - added new environment variables for retry delays: FEATUREHUB_SSE_INITIAL_RETRY_DELAY and
+      FEATUREHUB_SSE_MAX_RETRY_DELAY
     - made polling more resilient to failures, particularly on 1st one: errors are logged and polling continues
     - polling now uses a single worker thread so only one request is ever in flight; poll() and context_change()
       wait for it without blocking the event loop. poll_with_interval() and poll_again() have been removed
     - polling or streaming stopped by a rejected API key or a stale environment is no longer restarted by poll(),
       update_interval() or close()
     - nothing is applied to the repository from a request or stream that was in flight when close() was called
-    - polling requests time out after 12 seconds, configurable with the FEATUREHUB_POLLING_TIMEOUT environment variable
+    - polling requests time out after 12 seconds, configurable with the FEATUREHUB_POLLING_REQ_TIMEOUT environment variable
     - update_interval() takes effect immediately on a running poller, and starts polling if the interval was 0
     - the streaming client can be polled again after close(), and releases its connection when a stream ends
     - streaming reconnects after a connect timeout (12s) or a quiet stream (60s), configurable with
-      FEATUREHUB_STREAMING_CONNECT_TIMEOUT and FEATUREHUB_STREAMING_READ_TIMEOUT
+      FEATUREHUB_SSE_CONNECT_TIMEOUT and FEATUREHUB_SSE_READ_TIMEOUT
     - streaming notifies the repository of failure on a rejected API key, as polling does
     - updated dependencies based on trivy scan
     - aligned with the FeatureHub SDK protocol specification:
@@ -37,8 +37,17 @@
           isn't a list of environments is logged and ignored, as is a features notification that isn't a list
         - a context change clears the polling etag, and on a closed poller fetches once and stays closed;
           update_interval() no longer starts polling that was never started
+        - environment variables use the Go SDK's names: FEATUREHUB_POLL_INTERVAL is now FEATUREHUB_POLLING_INTERVAL
+          (the old name is still read, with a deprecation warning), the request timeout is FEATUREHUB_POLLING_REQ_TIMEOUT
+          and the streaming settings are FEATUREHUB_SSE_*. Intervals, delays and timeouts are durations with a unit, as
+          Go takes them (30s, 1m, 500ms), following the protocol specification's providers.environment_variables
+        - passive polling: FEATUREHUB_POLLING_PASSIVE, or use_polling_edge_service(interval, passive=True), fetches
+          only when features are read and are older than the interval
+        - the default edge service is chosen from the environment as the Go SDK does: FEATUREHUB_POLLING_PASSIVE
+          (passive polling), then FEATUREHUB_POLLING_INTERVAL (polling, for any key), then streaming for a client
+          evaluated key (unless the code chooses the edge service itself)
         - server evaluated keys have no default: polling must be chosen with use_polling_edge_service() or by setting
-          FEATUREHUB_POLL_INTERVAL, and `StreamingEdgeClient` rejects them (the context isn't sent over streaming, so
+          FEATUREHUB_POLLING_INTERVAL, and `StreamingEdgeClient` rejects them (the context isn't sent over streaming, so
           FeatureHub would evaluate them without it)
         - any 4xx from FeatureHub stops polling or streaming for good, as does a failure event on the stream
         - extra headers can be passed to `FeatureHubConfig(headers=...)` and are sent with every request
@@ -50,15 +59,15 @@
           values that are lists match if any value does, booleans and numbers in the context no longer raise, dates
           and date-times are compared in UTC, semantic versions compare their first three parts numerically, IPv4
           blocks and short/octal/hex forms are understood, and an invalid pattern, address or version never matches
-          (rather than raising). An absent DATE or DATETIME attribute is today / now. Numbers in strings are parsed
-          strictly, not with JavaScript's prefix rules. node-semver is no longer a dependency
+          (rather than raising). An absent DATE or DATETIME attribute is today / now. Numbers are strict (rollout-strategies.yaml
+          strict_number): a string must be exactly a decimal number, never JavaScript's prefix rules. node-semver is no longer a dependency
         - context attributes are always stored as a list of values of any type: `attribute_values()` (and the
           well-known setters) take one value or a list, tuple or set, and None removes the attribute. Values are kept as
           given and converted to the type each strategy attribute needs when it is evaluated (enums by their value)
         - streaming treats a 200 response that isn't text/event-stream as a failed connection, any `edge.stale` value
           as stale, resets the reconnect delay on any FeatureHub event, tells the repository of a lost connection
           (bye), never waits less than 100ms, and the backoff multiplier is configurable with
-          FEATUREHUB_STREAMING_BACKOFF_MULTIPLIER
+          FEATUREHUB_SSE_BACKOFF_MULTIPLIER
 * 1.1.0 - update dependencies
 * 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.
 * 0.0.2 - initial release

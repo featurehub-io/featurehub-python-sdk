@@ -400,7 +400,7 @@ class PollingEdgeServiceTest(TestCase):
             release.set()
 
     def test_timeout_can_be_overridden(self):
-        with patch.dict(os.environ, {"FEATUREHUB_POLLING_TIMEOUT": "3"}):
+        with patch.dict(os.environ, {"FEATUREHUB_POLLING_REQ_TIMEOUT": "3s"}):
             with patch("urllib3.PoolManager") as http_class_mock:
                 poller, repo = self._poller_returning(http_class_mock, '[]', interval=0)
                 asyncio.run(poller.poll())
@@ -606,6 +606,131 @@ class PollingProtocolTest(TestCase):
                 self.assertIsNotNone(poller._worker)
             finally:
                 poller.close()
+
+
+class PassivePollingTest(TestCase):
+    def _poller(self, http_class_mock, interval=30, status=200):
+        resp = MagicMock(name="http-response")
+        resp.status = status
+        resp.headers = {}
+        resp.data.decode.return_value = '[{"id":"ling","features":[]}]'
+        http_class_mock.return_value.request.return_value = resp
+        return PollingEdgeService('http://localhost/', ['123'], MagicMock(spec=FeatureHubRepository), interval,
+                                  passive=True)
+
+    def _requests(self, http_class_mock):
+        return http_class_mock.return_value.request.call_count
+
+    def _settle(self, poller):
+        worker = poller._worker
+        if worker:
+            worker.join(2)
+
+    def test_first_poll_fetches_and_nothing_is_scheduled(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
+            self.assertIsNone(poller._worker)  # no timer: the worker stops once the fetch is done
+            self.assertTrue(poller.passive)
+
+    def test_fresh_features_are_not_fetched_again(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            asyncio.run(poller.poll())
+            poller.refresh_if_stale()
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
+
+    def test_features_older_than_the_interval_are_fetched_when_read(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller._last_fetch -= 31  # the last fetch was longer ago than the interval
+            poller.refresh_if_stale()  # doesn't wait for it
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 2)
+            poller.refresh_if_stale()  # and the features are fresh again
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 2)
+
+    def test_a_poll_with_stale_features_waits_for_the_fetch(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller._last_fetch -= 31
+            asyncio.run(poller.poll())
+            self.assertEqual(self._requests(http_class_mock), 2)
+
+    def test_a_failed_fetch_is_not_retried_before_the_interval(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock, status=503)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller.refresh_if_stale()
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
+
+    def test_an_interval_of_zero_fetches_once(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock, interval=0)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller._last_fetch -= 3600
+            poller.refresh_if_stale()
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
+
+    def test_nothing_is_fetched_before_it_is_started(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            poller.refresh_if_stale()
+            poller.update_interval(60)
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 0)
+
+    def test_a_context_change_always_fetches(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            asyncio.run(poller.context_change('userkey=orm'))
+            self.assertEqual(self._requests(http_class_mock), 2)
+            self.assertEqual(http_class_mock.return_value.request.call_args.kwargs['headers']['x-featurehub'],
+                             'userkey=orm')
+
+    def test_update_interval_does_not_start_a_timer(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller.update_interval(5)
+            self.assertIsNone(poller._worker)
+            self.assertEqual(poller.interval, 5)
+
+    def test_closed_passive_polling_fetches_nothing_when_read(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = self._poller(http_class_mock)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller.close()
+            poller._last_fetch -= 31
+            poller.refresh_if_stale()
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
+
+    def test_active_polling_ignores_refresh_if_stale(self):
+        with patch("urllib3.PoolManager") as http_class_mock:
+            poller = PollingEdgeService('http://localhost/', ['123'], MagicMock(spec=FeatureHubRepository), 0)
+            asyncio.run(poller.poll())
+            self._settle(poller)
+            poller.refresh_if_stale()
+            self._settle(poller)
+            self.assertEqual(self._requests(http_class_mock), 1)
 
 
 if __name__ == '__main__':

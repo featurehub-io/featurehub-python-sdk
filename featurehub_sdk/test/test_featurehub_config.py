@@ -108,8 +108,9 @@ class FeatureHubConfigTest(unittest.TestCase):
         self.mock_edge.assert_called()
         edge.close.assert_called()
     def test_client_evaluated_key_streams_by_default(self):
-        cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo, headers={'X-Chago': 'orm'})
-        edge = cfg.get_or_create_edge_service()
+        with patch.dict(os.environ, {}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo, headers={'X-Chago': 'orm'})
+            edge = cfg.get_or_create_edge_service()
         self.assertIsInstance(edge, StreamingEdgeClient)
         self.assertEqual(edge._streaming_thread._headers, {'X-Chago': 'orm'})
 
@@ -131,19 +132,104 @@ class FeatureHubConfigTest(unittest.TestCase):
         self.assertEqual(edge._headers, {'X-Chago': 'ling'})
 
     def test_server_evaluated_key_polls_when_the_env_interval_is_set(self):
-        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '45'}, clear=True):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': '45s'}, clear=True):
             cfg = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo, headers={'X-Chago': 'ling'})
             edge = cfg.get_or_create_edge_service()
         self.assertIsInstance(edge, PollingEdgeService)
         self.assertEqual(edge.interval, 45)
         self.assertEqual(edge._headers, {'X-Chago': 'ling'})
 
+    def test_reading_features_refreshes_the_edge_service(self):
+        for keys in (['ling*kwong'], ['kornaphat']):
+            cfg = FeatureHubConfig("http://localhost/", keys, self.mock_repo, lambda rep, k, url: self.mock_edge)
+            cfg.new_context().feature('always_wonder')
+        self.assertEqual(self.mock_edge.refresh_if_stale.call_count, 2)
+
+    def test_client_evaluated_key_polls_when_the_env_interval_is_set(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': '1m'}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo, headers={'X-Chago': 'orm'})
+            edge = cfg.get_or_create_edge_service()
+        self.assertIsInstance(edge, PollingEdgeService)
+        self.assertEqual(edge.interval, 60)
+        self.assertEqual(edge._headers, {'X-Chago': 'orm'})
+
+    def test_an_empty_env_interval_is_not_set(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': ' '}, clear=True):
+            edge = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+        self.assertIsInstance(edge, StreamingEdgeClient)
+
+    def test_an_invalid_env_interval_is_an_error(self):
+        for value in ('soon', '2', '-1'):
+            with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': value}, clear=True):
+                with self.assertRaises(ValueError, msg=value):
+                    FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+
+    def test_an_explicit_choice_wins_over_the_env_interval(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': '60s'}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo)
+            cfg.use_polling_edge_service(15)
+            self.assertEqual(cfg.get_or_create_edge_service().interval, 15)
+            cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo,
+                                   edge_provider=lambda repo, keys, url: StreamingEdgeClient(url, keys, repo))
+            self.assertIsInstance(cfg.get_or_create_edge_service(), StreamingEdgeClient)
+
+    def test_polling_passive_chooses_passive_polling(self):
+        for keys in (['ling*kwong'], ['kornaphat']):
+            with patch.dict(os.environ, {'FEATUREHUB_POLLING_PASSIVE': 'true', 'FEATUREHUB_POLLING_INTERVAL': '45s'},
+                            clear=True):
+                edge = FeatureHubConfig("http://localhost/", keys, self.mock_repo,
+                                        headers={'X-Chago': 'orm'}).get_or_create_edge_service()
+            self.assertIsInstance(edge, PollingEdgeService, keys)
+            self.assertTrue(edge.passive, keys)
+            self.assertEqual(edge.interval, 45)
+            self.assertEqual(edge._headers, {'X-Chago': 'orm'})
+
+    def test_polling_passive_without_an_interval_fetches_once(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_PASSIVE': 'yes'}, clear=True):
+            edge = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo).get_or_create_edge_service()
+        self.assertTrue(edge.passive)
+        self.assertEqual(edge.interval, 0)
+
+    def test_an_empty_polling_passive_is_not_set(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_PASSIVE': '', 'FEATUREHUB_POLLING_INTERVAL': '45s'}, clear=True):
+            edge = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+        self.assertFalse(edge.passive)
+
+    def test_use_polling_can_be_passive(self):
+        with patch.dict(os.environ, {}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo)
+            cfg.use_polling_edge_service(60, passive=True)
+            edge = cfg.get_or_create_edge_service()
+        self.assertTrue(edge.passive)
+        self.assertEqual(edge.interval, 60)
+
+    def test_polling_interval_takes_go_durations_with_a_unit(self):
+        for value, seconds in (('30s', 30), ('1m', 60), ('1m30s', 90), ('7500ms', 7.5), ('5.5s', 5.5), ('0', 0),
+                               ('0s', 0), (' 1h ', 3600)):
+            with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': value}, clear=True):
+                edge = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+            self.assertEqual(edge.interval, seconds, value)
+        for value in ('30', '5.5', '3s', '1m-', 'ten', '-30s', '30x'):  # a unit is required, and at least 5s
+            with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': value}, clear=True):
+                with self.assertRaises(ValueError, msg=value):
+                    FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+
+    def test_the_1x_poll_interval_name_still_works_but_is_deprecated(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '45'}, clear=True):
+            with self.assertLogs('featurehub_sdk', level='WARNING') as logs:
+                edge = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+        self.assertEqual(edge.interval, 45)
+        self.assertIn('FEATUREHUB_POLL_INTERVAL is deprecated', logs.output[0])
+        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '45', 'FEATUREHUB_POLLING_INTERVAL': '60s'}, clear=True):
+            edge = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo).get_or_create_edge_service()
+        self.assertEqual(edge.interval, 60)
+
     def test_use_polling_validates_the_interval_at_once(self):
         cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo)
         for interval in (-1, 4):
             with self.assertRaises(ValueError):
                 cfg.use_polling_edge_service(interval)
-        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '2'}, clear=True):
+        with patch.dict(os.environ, {'FEATUREHUB_POLLING_INTERVAL': '2'}, clear=True):
             with self.assertRaises(ValueError):
                 cfg.use_polling_edge_service()
 

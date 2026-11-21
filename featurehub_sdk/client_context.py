@@ -396,6 +396,7 @@ class ClientEvalFeatureContext(ClientContext):
         return self
 
     def feature(self, name: str) -> FeatureState:
+        self._edge.refresh_if_stale()
         return self._repository.feature(name).with_context(self)
 
 
@@ -473,4 +474,8 @@ class ServerEvalFeatureContext(ClientContext):
     def build_sync(self) -> ClientContext:
         asyncio.run(self.build())
         return self
+
+    def feature(self, name: str) -> FeatureState:
+        self._current_edge.refresh_if_stale()
+        return super().feature(name)
 

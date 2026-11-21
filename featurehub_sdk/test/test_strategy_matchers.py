@@ -232,9 +232,12 @@ class StrategyMatcherSpecTest(TestCase):
         self.assertFalse(self.match('DATE', 'EQUALS', ['2026-11-17'], 'keep silent'))
 
     def test_numbers_in_strings_are_parsed_strictly(self):
-        # deliberately not JavaScript's prefix parsing: a string that isn't a number never matches
+        # strict_number, not JavaScript's prefix parsing: a string that isn't exactly a number never matches
         self.assertTrue(self.match('NUMBER', 'EQUALS', [12], '12'))
-        self.assertTrue(self.match('NUMBER', 'EQUALS', [12.5], ' 12.5 '))
+        self.assertTrue(self.match('NUMBER', 'EQUALS', ['12.5'], '+12.5'))
+        for not_a_number in (' 12.5', '1e3', '.5', '5.', 'Infinity', float('inf'), float('nan')):
+            self.assertFalse(self.match('NUMBER', 'NOT_EQUALS', [1], not_a_number), not_a_number)
+        self.assertTrue(self.match('NUMBER', 'NOT_EQUALS', ['1e3'], 1000))  # values that aren't numbers are ignored
         self.assertFalse(self.match('NUMBER', 'GREATER', [10], '12abc'))
         self.assertFalse(self.match('NUMBER', 'NOT_EQUALS', [1], 'kornaphat'))
 

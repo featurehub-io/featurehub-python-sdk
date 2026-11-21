@@ -1,9 +1,8 @@
 # Rollout strategy evaluation, as specified by featurehub-sdk-docs specs/rollout-strategies.yaml and checked against
 # its golden fixture (featurehub_sdk/test/fixtures/typescript_golden.json).
 #
-# Deliberate difference from the specification: numbers in strings are parsed strictly (a plain decimal number,
-# optionally with a fraction and exponent), not with JavaScript's parseInt/parseFloat prefix rules - a string that
-# isn't a number never matches a NUMBER attribute.
+# Numbers are strict (js_conversions.strict_number): a finite number, or a string that is exactly a decimal integer or
+# float, never JavaScript's parseInt/parseFloat prefix rules.
 import datetime
 import logging
 import math
@@ -128,15 +127,16 @@ class StringMatcher(StrategyMatcher):
         return _string_match(_text(supplied_value), attr.conditional, [_text(v) for v in _values(attr)])
 
 
-_NUMBER = re.compile(r'\s*[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?\s*')
+_NUMBER = re.compile(r'[+-]?[0-9]+(\.[0-9]+)?')
 
 
-# a number, or a string holding a plain decimal number (strictly: not JavaScript's prefix parsing); else None
+# strict_number: a finite number, or a string that is exactly a decimal integer or float ("12", "-0.5"; not "12abc",
+# "1e3", " 3" or ".5"); else None
 def _number(value: Any) -> Optional[float]:
     if isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return None if isinstance(value, float) and math.isnan(value) else float(value)
+        return float(value) if math.isfinite(value) else None
     if isinstance(value, str) and _NUMBER.fullmatch(value):
         return float(value)
     if isinstance(value, Decimal) and value.is_finite():
@@ -153,11 +153,11 @@ class NumberMatcher(StrategyMatcher):
         if supplied is None:  # not a number, so nothing matches
             return False
         conditional = attr.conditional
+        values = [n for n in (_number(v) for v in _values(attr)) if n is not None]  # values that aren't numbers are ignored
         if conditional in self._STRING_CONDITIONALS:
             # these compare the number's text with the values' text, so 100.0 STARTS_WITH 1
-            return _string_match(_text(supplied), conditional, [_text(v) for v in _values(attr)])
+            return _string_match(_text(supplied), conditional, [_text(v) for v in values])
 
-        values = [n for n in (_number(v) for v in _values(attr)) if n is not None]
         if conditional == Conditional.Equals:
             return _any(values, lambda v: supplied == v)
         if conditional == Conditional.NotEquals:
