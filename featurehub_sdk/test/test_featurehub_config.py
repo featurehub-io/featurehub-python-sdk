@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 
 from featurehub_sdk.client_context import ServerEvalFeatureContext, ClientEvalFeatureContext, InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
+import os
+from unittest.mock import patch
+
 from featurehub_sdk.featurehub_config import FeatureHubConfig
+from featurehub_sdk.polling_edge_service import PollingEdgeService
+from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
 
 # we need this so we can do async testing (Stack Overflow)
 def sync(coro):
@@ -102,6 +107,53 @@ class FeatureHubConfigTest(unittest.TestCase):
         cfg.edge_service_provider(new_edge_provider)
         self.mock_edge.assert_called()
         edge.close.assert_called()
+    def test_client_evaluated_key_streams_by_default(self):
+        cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo, headers={'X-Chago': 'orm'})
+        edge = cfg.get_or_create_edge_service()
+        self.assertIsInstance(edge, StreamingEdgeClient)
+        self.assertEqual(edge._streaming_thread._headers, {'X-Chago': 'orm'})
+
+    def test_server_evaluated_key_has_no_default_mode(self):
+        with patch.dict(os.environ, {}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo)
+            with self.assertRaises(ValueError):
+                cfg.get_or_create_edge_service()
+            with self.assertRaises(ValueError):
+                cfg.new_context()
+
+    def test_server_evaluated_key_polls_when_chosen(self):
+        with patch.dict(os.environ, {}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo, headers={'X-Chago': 'ling'})
+            cfg.use_polling_edge_service()
+            edge = cfg.get_or_create_edge_service()
+        self.assertIsInstance(edge, PollingEdgeService)
+        self.assertEqual(edge.interval, 30)
+        self.assertEqual(edge._headers, {'X-Chago': 'ling'})
+
+    def test_server_evaluated_key_polls_when_the_env_interval_is_set(self):
+        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '45'}, clear=True):
+            cfg = FeatureHubConfig("http://localhost/", ['kornaphat'], self.mock_repo, headers={'X-Chago': 'ling'})
+            edge = cfg.get_or_create_edge_service()
+        self.assertIsInstance(edge, PollingEdgeService)
+        self.assertEqual(edge.interval, 45)
+        self.assertEqual(edge._headers, {'X-Chago': 'ling'})
+
+    def test_use_polling_validates_the_interval_at_once(self):
+        cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo)
+        for interval in (-1, 4):
+            with self.assertRaises(ValueError):
+                cfg.use_polling_edge_service(interval)
+        with patch.dict(os.environ, {'FEATUREHUB_POLL_INTERVAL': '2'}, clear=True):
+            with self.assertRaises(ValueError):
+                cfg.use_polling_edge_service()
+
+    def test_use_polling_passes_headers(self):
+        cfg = FeatureHubConfig("http://localhost/", ['ling*kwong'], self.mock_repo, headers={'X-Chago': 'orm'})
+        cfg.use_polling_edge_service(0)
+        edge = cfg.get_or_create_edge_service()
+        self.assertIsInstance(edge, PollingEdgeService)
+        self.assertEqual(edge._headers, {'X-Chago': 'orm'})
+
 
 if __name__ == '__main__':
     unittest.main()

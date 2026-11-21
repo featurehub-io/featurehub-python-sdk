@@ -8,11 +8,29 @@ from featurehub_sdk.client_context import ClientContext, ClientEvalFeatureContex
     InternalFeatureRepository
 from featurehub_sdk.edge_service import EdgeService
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
-from typing import List, Callable
-from featurehub_sdk.polling_edge_service import PollingEdgeService
+from typing import Dict, List, Callable, Optional
+from featurehub_sdk.polling_edge_service import PollingEdgeService, validate_poll_interval
 from featurehub_sdk.streaming_edge_service import StreamingEdgeClient
 
 log = logging.getLogger('featurehub_sdk')
+
+DEFAULT_POLL_INTERVAL = 30
+
+
+# the polling interval from FEATUREHUB_POLL_INTERVAL, or 30 seconds
+def _env_poll_interval() -> int:
+    value = os.environ.get("FEATUREHUB_POLL_INTERVAL")
+    if value is None:
+        return DEFAULT_POLL_INTERVAL
+    return _parse_poll_interval(value)
+
+
+def _parse_poll_interval(value: str) -> int:
+    try:
+        return int(value)
+    except ValueError:
+        raise ValueError(f"FEATUREHUB_POLL_INTERVAL must be a whole number of seconds, not {value!r}")
+
 
 class FeatureHubConfig:
     _api_keys: List[str]
@@ -21,11 +39,16 @@ class FeatureHubConfig:
     _repository: InternalFeatureRepository
     _edge_service: typing.Optional[EdgeService]
     _edge_service_provider: Callable[[InternalFeatureRepository, List[str], str], EdgeService]
+    _headers: Dict[str, str]
 
+    # headers are extra headers the built-in edge services send with every request to FeatureHub (e.g. for an API
+    # gateway or a proxy in front of it). the SDK's own headers win over any of the same name
     def __init__(self, edge_url, api_keys: List[str],
                  repository: typing.Optional[InternalFeatureRepository] = None,
-                 edge_provider: typing.Optional[Callable[[InternalFeatureRepository, List[str], str], EdgeService]] = None):
+                 edge_provider: typing.Optional[Callable[[InternalFeatureRepository, List[str], str], EdgeService]] = None,
+                 headers: Optional[Dict[str, str]] = None):
         self._edge_service = None
+        self._headers = dict(headers) if headers else {}
         self._repository = repository if repository is not None else FeatureHubRepository()
         self._edge_url = edge_url
         self._api_keys = api_keys
@@ -106,14 +129,29 @@ class FeatureHubConfig:
 
     # this is just an internal function that creates the default edge service if the user hasn't provided one (which
     # will be 90% of the time)
+    # client evaluated keys stream. a server evaluated key has no default: this SDK doesn't send the context over
+    # streaming, so it must poll, chosen with use_polling_edge_service() or by setting FEATUREHUB_POLL_INTERVAL
     def _create_default_provider(self, repository: InternalFeatureRepository, api_keys: List[str],
                                  edge_url: str) -> EdgeService:
+        if self._client_eval:
+            return StreamingEdgeClient(edge_url, api_keys, repository, self._headers)
 
-        return StreamingEdgeClient(edge_url, api_keys, repository)
+        env_interval = os.environ.get("FEATUREHUB_POLL_INTERVAL")
+        if env_interval is None:
+            raise ValueError("a server evaluated API key must poll: call use_polling_edge_service() or set "
+                             "FEATUREHUB_POLL_INTERVAL")
+        return PollingEdgeService(edge_url, api_keys, repository, _parse_poll_interval(env_interval), self._headers)
 
-    def use_polling_edge_service(self, interval: int = int(os.environ.get("FEATUREHUB_POLL_INTERVAL", "30"))):
+    # interval is in seconds: 0 polls once, otherwise it must be at least 5. defaults to the environment variable
+    # FEATUREHUB_POLL_INTERVAL, or 30
+    def use_polling_edge_service(self, interval: Optional[int] = None):
+        if interval is None:
+            interval = _env_poll_interval()
+        validate_poll_interval(interval)
+        headers = self._headers
         self.edge_service_provider(lambda repository, api_keys,
-                                          edge_url: PollingEdgeService(edge_url, api_keys, repository, interval))
+                                          edge_url: PollingEdgeService(edge_url, api_keys, repository, interval,
+                                                                       headers))
 
     def new_context(self) -> ClientContext:
         repository = self.repository()

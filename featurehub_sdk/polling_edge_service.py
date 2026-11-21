@@ -8,12 +8,27 @@ import json
 import asyncio
 import time
 from hashlib import sha256
-from typing import List
-from featurehub_sdk.edge_service import EdgeService, _env_seconds
+from typing import Dict, List
+from featurehub_sdk.edge_service import EdgeService, _env_seconds, _request_headers
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger('featurehub_sdk')
+
+# no polling interval other than 0 (poll once) may be shorter than this, so no configuration polls the server too often.
+# a Cache-Control max-age below it is raised to it. only the SDK's own tests change it
+_MIN_POLLING_INTERVAL = 5
+
+
+def validate_poll_interval(interval) -> None:
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)):
+        raise ValueError(f"polling interval must be a number of seconds, not {interval!r}")
+    if interval < 0:
+        raise ValueError(f"polling interval must not be negative ({interval})")
+    if 0 < interval < _MIN_POLLING_INTERVAL:
+        raise ValueError(f"polling interval must be 0 (poll once) or at least {_MIN_POLLING_INTERVAL} seconds "
+                         f"({interval})")
+
 
 class PollingEdgeService(EdgeService):
     # how long (in seconds) a request to the server may take before it is abandoned, overridden by
@@ -36,11 +51,19 @@ class PollingEdgeService(EdgeService):
     _cache_control_pattern: re.Pattern
     _sha_context: Optional[str]
     _etag: Optional[str]
+    _headers: Dict[str, str]
+    _started: bool
+    _single_fetch: bool
 
+    # headers are extra headers sent with every request (e.g. for an API gateway); the SDK's own headers win over
+    # any of the same name
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: FeatureHubRepository,
-                 interval: int):
+                 interval: int,
+                 headers: Optional[Dict[str, str]] = None):
+        validate_poll_interval(interval)
         self._interval = interval
+        self._headers = dict(headers) if headers else {}
         self._repository = repository
         self._cancel = False
         self._stopped = False
@@ -57,6 +80,10 @@ class PollingEdgeService(EdgeService):
         self._context = None
         self._etag = None
         self._sha_context = None
+        # poll() (or a context change) has started polling, so update_interval() may start it again
+        self._started = False
+        # closed, but fetching once for a context change: once that is done it is closed again
+        self._single_fetch = False
         self._timeout = _env_seconds('FEATUREHUB_POLLING_TIMEOUT', self.TIMEOUT)
         self._http = urllib3.PoolManager()
         self._cache_control_pattern = re.compile('max-age=(\\d+)')
@@ -66,13 +93,16 @@ class PollingEdgeService(EdgeService):
 
     # allow us to update the interval of the current polling edge service
     def update_interval(self, interval: int):
+        validate_poll_interval(interval)
         with self._cond:
             self._interval = interval
-            # polling stopped by an invalid key (404) or a stale environment stays stopped
-            if self._invalid_key or self._stopped:
+            # polling stopped by a rejected key or a stale environment stays stopped, and polling that hasn't been
+            # started yet (by poll() or init()) isn't started by changing its interval
+            if self._invalid_key or self._stopped or not self._started:
                 return
-            if self._cancel:  # close() stopped polling, so start it again
+            if self._cancel or self._single_fetch:  # close() stopped polling, so start it again
                 self._cancel = False
+                self._single_fetch = False
                 self._request_fetch()
             elif self._worker is not None:
                 self._wakeup.set()  # so the worker waits for the new interval instead of the old one
@@ -87,16 +117,18 @@ class PollingEdgeService(EdgeService):
         url = f"{self._url}&contextSha={sha_context}"
 
         log.debug("polling %s", url)
-        headers = {
+        sdk_headers = {
             'X-SDK': 'Python',
             'X-SDK-Version': sdk_version
         }
 
         if self._etag:
-            headers['if-none-match'] = self._etag
+            sdk_headers['if-none-match'] = self._etag
 
         if context:
-            headers['x-featurehub'] = context
+            sdk_headers['x-featurehub'] = context
+
+        headers = _request_headers(self._headers, sdk_headers)
 
         try:
             resp = self._http.request(method='GET', url=url, headers=headers, timeout=self._timeout)
@@ -110,16 +142,22 @@ class PollingEdgeService(EdgeService):
                 self._process_successful_results(json.loads(resp.data.decode('utf-8')))
 
                 # only keep the etag once the body has been processed, otherwise a bad body would be followed by
-                # 304s for that etag and the features would never be fetched again
+                # 304s for that etag and the features would never be fetched again. it belongs to the context it was
+                # fetched for, so it isn't kept if the context changed while the request was in flight
                 if 'etag' in resp.headers:
-                    self._etag = resp.headers['etag']
+                    with self._cond:
+                        if self._context == context:
+                            self._etag = resp.headers['etag']
 
                 if 'cache-control' in resp.headers:
                     self._cache_control_polling_interval(resp.headers['cache-control'])
 
-                # if it is a 236, we have been told to stop
+                # if it is a 236, the environment is stale: it will never change, so stop for good
                 if resp.status == 236:
-                    self._stopped = True
+                    with self._cond:
+                        self._stopped = True
+                    log.warning("environment is stale, stopped requesting updates")
+                    self._repository.mark_environment_stale()
                 return
         except (ValueError, urllib3.exceptions.HTTPError) as err:
             # HTTPError is the base of all urllib3 errors, including failing to connect at all. ValueError covers
@@ -131,12 +169,14 @@ class PollingEdgeService(EdgeService):
             log.exception("failed to process featurehub poll")
             return
 
-        if resp.status == 404: # no such key
+        if 400 <= resp.status < 500:  # the key or environment is rejected (any 4xx, 429 included), so stop for good
             self._repository.notify("failed", None)
             with self._cond:
                 self._invalid_key = True
                 self._cancel = True
-            log.error("Specified API Key does not exist %s", self._url)
+            log.error("featurehub rejected the API key with status %s, stopped polling %s", resp.status, self._url)
+        elif resp.status == 304:
+            log.debug("featurehub features unchanged")
         elif resp.status == 503:
             # dacha is busy, just wait
             return
@@ -150,7 +190,9 @@ class PollingEdgeService(EdgeService):
             new_interval = int(max_age[0])
             if new_interval > 0:
                 with self._cond:  # update_interval() can change it from another thread
-                    self._interval = new_interval
+                    if self._interval <= 0:  # an interval of 0 polls once, a max-age doesn't start polling again
+                        return
+                    self._interval = max(new_interval, _MIN_POLLING_INTERVAL)
 
     # the worker: fetch, then wait for the interval (or until a fetch is asked for), and repeat. it stops when
     # cancelled, when the server says the environment is stale, or - with an interval of 0 - once nothing is waiting
@@ -182,10 +224,13 @@ class PollingEdgeService(EdgeService):
 
     # must be called holding self._cond. decides whether the worker should stop, and if so clears _worker in the same
     # locked block, so a request can't slip in between and find a worker that is about to exit and never serves it.
-    # a stale environment still serves fetches already asked for (a context change), it just doesn't poll
+    # a stale environment requests nothing more, not even fetches already asked for
     def _finished(self) -> bool:
         pending = self._requested > self._completed
-        if self._cancel or (not pending and (self._stopped or self._interval <= 0)):
+        if self._cancel or self._stopped or (not pending and (self._interval <= 0 or self._single_fetch)):
+            if self._single_fetch:  # the context change's fetch after close() is done, so it is closed again
+                self._single_fetch = False
+                self._cancel = True
             self._worker = None
             self._cond.notify_all()
             return True
@@ -204,10 +249,9 @@ class PollingEdgeService(EdgeService):
                 self._wakeup.clear()
             self._wakeup.wait(remaining)
 
-    # must be called holding self._cond. returns the request number to wait for, or None if polling has stopped.
-    # even_if_stopped fetches once even though the environment is stale
-    def _request_fetch(self, even_if_stopped: bool = False) -> Optional[int]:
-        if self._cancel or (self._stopped and not even_if_stopped):
+    # must be called holding self._cond. returns the request number to wait for, or None if polling has stopped
+    def _request_fetch(self) -> Optional[int]:
+        if self._cancel or self._stopped:
             return None
         self._requested += 1
         self._wakeup.set()
@@ -229,6 +273,8 @@ class PollingEdgeService(EdgeService):
             if self._invalid_key:  # don't try again with a key the server rejected (404)
                 return
             self._cancel = False
+            self._single_fetch = False
+            self._started = True
             request = self._request_fetch()
         if request is None:  # the environment is stale, so the server told us to stop asking
             return
@@ -241,23 +287,31 @@ class PollingEdgeService(EdgeService):
     def close(self):
         with self._cond:
             self._cancel = True
+            self._single_fetch = False
             self._wakeup.set()
             self._cond.notify_all()
 
-    # the caller has marked the repository not ready, so this always fetches for a new context - even if polling was
-    # closed or the environment is stale (server evaluated features differ per context) - or reports the failure
+    # fetches the features for a new context, or reports the failure for a rejected key. if polling was closed it
+    # fetches once and stays closed. once the environment is stale nothing more can be fetched, so the last features
+    # are kept
     async def context_change(self, header: str):
         with self._cond:
             old_context = self._context
             self._context = header
-            self._sha_context = sha256(header.encode('utf-8')).hexdigest()
-            if old_context == header:
+            self._sha_context = sha256(header.encode('utf-8')).hexdigest() if header else None
+            if old_context == header or self._stopped:
                 return
+            # the etag belongs to the old context: a 304 for it would leave the old context's features
+            self._etag = None
             invalid_key = self._invalid_key
             if not invalid_key:
-                self._cancel = False
-                request = self._request_fetch(even_if_stopped=True)
-        if invalid_key:  # don't try again with a key the server rejected (404), but don't leave it not ready either
+                if self._cancel:
+                    self._cancel = False
+                    self._single_fetch = True
+                elif not self._single_fetch:
+                    self._started = True
+                request = self._request_fetch()
+        if invalid_key:  # don't try again with a key the server rejected (the repository already knows it failed)
             self._repository.notify("failed", None)
             return
         await asyncio.to_thread(self._wait_for_fetch, request)
@@ -274,10 +328,17 @@ class PollingEdgeService(EdgeService):
     def interval(self):
         return self._interval
 
-    # we get returned a bunch of environments for a GET/Poll API so we need to cycle through them
-    # the result is different for streaming
+    # we get returned an environment for each API key. together their features are one full set, so they are given to
+    # the repository at once - one environment at a time would remove the features of the others
     def _process_successful_results(self, data):
         log.debug("featurehub polling data was %s", data)
-        for feature_apikey in data:
-            if feature_apikey:
-                self._repository.notify("features", feature_apikey['features'])
+        if not isinstance(data, list):
+            raise ValueError(f"expected a list of environments, got {type(data).__name__}")
+        features = []
+        for environment in data:
+            if not environment:
+                continue
+            if not isinstance(environment, dict) or not isinstance(environment.get('features', []), list):
+                raise ValueError("expected each environment to have a list of features")
+            features.extend(environment.get('features') or [])
+        self._repository.notify("features", features)

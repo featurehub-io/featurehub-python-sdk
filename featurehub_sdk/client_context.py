@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
-from typing import Optional, Any, Dict, List
+from typing import Callable, Optional, Any, Dict, List
 import json
+import math
 import urllib.parse
 import asyncio
 
@@ -204,6 +206,17 @@ class Applied:
         return self._matched
 
 
+class Readiness(Enum):
+    # NotReady: no features are held. Ready: features are held and current. Stale: features are held and served, but
+    # may not be current (a context change is being fetched, or the connection failed or the environment is stale -
+    # see the repository's connection_failed and environment_stale). Failed: final, the connection failed before any
+    # features were received
+    NotReady = 'NotReady'
+    Ready = 'Ready'
+    Stale = 'Stale'
+    Failed = 'Failed'
+
+
 class InternalFeatureRepository:
     # give me the raw feature from the repository level (top level features, no contexts)
     def feature(self, key: str) -> FeatureState:
@@ -221,10 +234,42 @@ class InternalFeatureRepository:
     def not_ready(self) -> bool:
         pass
 
+    # the detailed readiness state. repositories that only implement is_ready() report Ready or NotReady
+    @property
+    def readiness(self) -> Readiness:
+        return Readiness.Ready if self.is_ready() else Readiness.NotReady
+
+    # the source says the environment is stale and will send no further updates
+    def mark_environment_stale(self):
+        pass
+
+    # the connection updating the repository has permanently failed
+    @property
+    def connection_failed(self) -> bool:
+        return False
+
+    # the environment is stale: FeatureHub will send no more updates
+    @property
+    def environment_stale(self) -> bool:
+        return False
+
+    # listener(readiness) is called whenever readiness changes, and at once with the current readiness. repositories
+    # that don't support listeners never call it. each returns a function that removes the listener
+    def register_readiness_listener(self, listener) -> Callable[[], None]:
+        return lambda: None
+
+    # listener() is called once when the connection permanently fails
+    def register_connection_failed_listener(self, listener) -> Callable[[], None]:
+        return lambda: None
+
+    # listener() is called once when the environment goes stale
+    def register_environment_stale_listener(self, listener) -> Callable[[], None]:
+        return lambda: None
+
     def apply(self, strategies: List[RolloutStrategy], key: str, feature_id: str, context: "ClientContext") -> Applied:
         pass
 
-    def notify(self, cmd: str, data):
+    def notify(self, cmd: str, data: Optional):
         pass
 
 class ClientContext:
@@ -346,6 +391,52 @@ class ClientEvalFeatureContext(ClientContext):
         return self._repository.feature(name).with_context(self)
 
 
+# how a context attribute value is written when sent to FeatureHub (the protocol's wire_value)
+def wire_value(value: Any) -> str:
+    if isinstance(value, Enum):
+        value = value.value
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, float):
+        # as JavaScript's String(n) does
+        if math.isnan(value):
+            return 'NaN'
+        if math.isinf(value):
+            return 'Infinity' if value > 0 else '-Infinity'
+        return str(int(value)) if value.is_integer() and abs(value) < 1e21 else repr(value)
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            return wire_value(float(value))
+        return str(int(value)) if value == value.to_integral_value() else str(value)
+    if isinstance(value, datetime):
+        # a naive datetime is taken as local time, as datetime.astimezone() does
+        return value.astimezone(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+# encoded as JavaScript's encodeURIComponent does
+def _encode_component(value: str) -> str:
+    return urllib.parse.quote(value, safe="-_.!~*'()")
+
+
+# the x-featurehub header for server evaluated keys: for each attribute the encoded key + "=" + the encoded values
+# joined by ",", sorted and joined by ",". empty if there are no attributes
+def x_featurehub_header(attributes: Dict[str, Any]) -> str:
+    parts = []
+    for key, values in attributes.items():
+        if values is None:
+            continue
+        if not isinstance(values, (list, tuple)):
+            values = [values]
+        values = [wire_value(v) for v in values if v is not None]
+        if not values:
+            continue
+        parts.append(_encode_component(str(key)) + "=" + _encode_component(",".join(values)))
+    return ",".join(sorted(parts))
+
+
 class ServerEvalFeatureContext(ClientContext):
     # server eval feature context needs to evaluate the context on the server, so we need to wrap up the
     # context in a bunch of url encoded key value pairs and send it off to the edge service to be updated and
@@ -357,11 +448,8 @@ class ServerEvalFeatureContext(ClientContext):
         super().__init__(repo)
         self._current_edge = edge
 
-    def _pick_first(self, v: object):
-        return v[0] if isinstance(v, list) else v
-
     async def build(self) -> ClientContext:
-        new_header = "&".join("=".join((k, urllib.parse.quote(str(self._pick_first(v))))) for k,v in self._attributes.items())
+        new_header = x_featurehub_header(self._attributes)
 
         if self._old_header is None and len(new_header) == 0:
             await self._current_edge.poll()  # just make sure we have started
