@@ -9,6 +9,7 @@ import logging
 import math
 import re
 from decimal import Decimal
+from enum import Enum
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from murmurhash2 import murmurhash3
@@ -63,6 +64,8 @@ def _utf16(s: str) -> bytes:
 class StrategyMatcher:
     # supplied_value is one value from the context. a matcher never raises: anything it can't evaluate doesn't match
     def match(self, supplied_value: Any, attr: RolloutStrategyAttribute) -> bool:
+        if isinstance(supplied_value, Enum):  # e.g. StrategyAttributeCountryName: matched by its value
+            supplied_value = supplied_value.value
         if supplied_value is None:
             return False
         try:

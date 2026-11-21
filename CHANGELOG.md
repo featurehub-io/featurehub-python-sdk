@@ -51,6 +51,9 @@
           blocks and short/octal/hex forms are understood, and an invalid pattern, address or version never matches
           (rather than raising). An absent DATE or DATETIME attribute is today / now. Numbers in strings are parsed
           strictly, not with JavaScript's prefix rules. node-semver is no longer a dependency
+        - context attributes are always stored as a list of values of any type: `attribute_values()` (and the
+          well-known setters) take one value or a list, tuple or set, and None removes the attribute. Values are kept as
+          given and converted to the type each strategy attribute needs when it is evaluated (enums by their value)
         - streaming treats a 200 response that isn't text/event-stream as a failed connection, any `edge.stale` value
           as stale, resets the reconnect delay on any FeatureHub event, tells the repository of a lost connection
           (bye), never waits less than 100ms, and the backoff multiplier is configurable with

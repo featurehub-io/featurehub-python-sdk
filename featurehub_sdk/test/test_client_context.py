@@ -81,6 +81,37 @@ class ClientContextTest(TestCase):
         self.assertEqual(self.client_context.user_key('fred').get_attr(ClientContext.USER_KEY), 'fred')
         self.assertEqual(self.client_context.default_percentage_key, 'fred')
 
+    def test_attributes_are_stored_as_lists(self):
+        ctx = self.client_context
+        ctx.attribute_values('shop', 'kwong pastry')
+        ctx.attribute_values('fans', ('ling', 'orm'))
+        ctx.attribute_values('age', 27)
+        ctx.attribute_values('tags', [])
+        ctx.user_key(['lingling', 'kornaphat'])
+        self.assertEqual(ctx._attributes, {'shop': ['kwong pastry'], 'fans': ['ling', 'orm'], 'age': [27], 'tags': [],
+                                           'userkey': ['lingling', 'kornaphat']})
+        self.assertEqual(ctx.get_attr('fans'), 'ling')
+        self.assertEqual(ctx.get_attr_values('age'), [27])
+        self.assertEqual(ctx.get_attr_values('tags'), [])  # set, but empty, is not the same as absent
+        self.assertIsNone(ctx.get_attr('tags'))
+        self.assertIsNone(ctx.get_attr_values('missing'))
+        self.assertEqual(ctx.get_attr('missing', 'chago'), 'chago')
+
+    def test_set_values_are_stored_as_a_list(self):
+        self.assertEqual(sorted(self.client_context.attribute_values('fans', {'ling', 'orm'}).get_attr_values('fans')),
+                         ['ling', 'orm'])
+
+    def test_none_removes_an_attribute(self):
+        self.client_context.attribute_values('shop', 'omu&co').attribute_values('shop', None)
+        self.assertIsNone(self.client_context.get_attr_values('shop'))
+
+    def test_attribute_values_are_a_copy(self):
+        values = ['ling']
+        self.client_context.attribute_values('fans', values)
+        values.append('orm')
+        self.client_context.get_attr_values('fans').append('kwong')
+        self.assertEqual(self.client_context.get_attr_values('fans'), ['ling'])
+
     async def test_passed_methods(self):
         await self.client_context.build()
         await self.client_context.close()

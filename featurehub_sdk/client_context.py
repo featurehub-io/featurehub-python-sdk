@@ -274,7 +274,9 @@ class InternalFeatureRepository:
 
 class ClientContext:
     """holds client context"""
-    _attributes: Dict[str, object]
+    # every attribute is a list of values, which can be of any type (strings, numbers, booleans, datetimes, enums...).
+    # they are kept as given, and converted to the type a strategy attribute needs when it is evaluated
+    _attributes: Dict[str, List[Any]]
     _repo: InternalFeatureRepository
     USER_KEY = 'userkey'
     SESSION = 'session'
@@ -287,50 +289,47 @@ class ClientContext:
         self._repository = repo
         self._attributes = {}
 
-    def user_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.USER_KEY] = [value]
-        return self
+    def user_key(self, value: Any) -> ClientContext:
+        return self.attribute_values(ClientContext.USER_KEY, value)
 
-    def session_key(self, value: str) -> ClientContext:
-        self._attributes[ClientContext.SESSION] = [value]
-        return self
+    def session_key(self, value: Any) -> ClientContext:
+        return self.attribute_values(ClientContext.SESSION, value)
 
     def country(self, value: StrategyAttributeCountryName) -> ClientContext:
-        self._attributes[ClientContext.COUNTRY] = [value]
-        return self
+        return self.attribute_values(ClientContext.COUNTRY, value)
 
     def device(self, value: StrategyAttributeDeviceName) -> ClientContext:
-        self._attributes[ClientContext.DEVICE] = [value]
-        return self
+        return self.attribute_values(ClientContext.DEVICE, value)
 
     def platform(self, value: StrategyAttributePlatformName) -> ClientContext:
-        self._attributes[ClientContext.PLATFORM] = [value]
-        return self
+        return self.attribute_values(ClientContext.PLATFORM, value)
 
-    def version(self, version: str) -> ClientContext:
-        self._attributes[ClientContext.VERSION] = [version]
-        return self
+    def version(self, version: Any) -> ClientContext:
+        return self.attribute_values(ClientContext.VERSION, version)
 
-    def attribute_values(self, key: str, values: List[str]) -> ClientContext:
-        self._attributes[key] = values
+    # values is one value or a list (or tuple or set) of them, of any type. None removes the attribute
+    def attribute_values(self, key: str, values: Any) -> ClientContext:
+        if values is None:
+            self._attributes.pop(key, None)
+        elif isinstance(values, (list, tuple, set, frozenset)):
+            self._attributes[key] = list(values)
+        else:
+            self._attributes[key] = [values]
         return self
 
     def clear(self) -> ClientContext:
         self._attributes.clear()
         return self
 
-    def get_attr(self, key: str, default_value: Optional[str] = None) -> Optional[object]:
-        if key in self._attributes:
-            return self._attributes.get(key)[0]
+    # the first value of an attribute, or default_value if it isn't set or has no values
+    def get_attr(self, key: str, default_value: Optional[Any] = None) -> Optional[Any]:
+        values = self._attributes.get(key)
+        return values[0] if values else default_value
 
-        return default_value
-
-    # all the values of an attribute, or None if it isn't set
+    # all the values of an attribute (a copy), or None if it isn't set
     def get_attr_values(self, key: str) -> Optional[List[Any]]:
         values = self._attributes.get(key)
-        if values is None:
-            return None
-        return list(values) if isinstance(values, (list, tuple)) else [values]
+        return None if values is None else list(values)
 
     # the session if set, else the userkey; several values are joined with ","
     @property

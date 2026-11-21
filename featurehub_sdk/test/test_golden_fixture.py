@@ -46,7 +46,7 @@ def _javascript_number(part: str) -> bool:
 def _context(attributes) -> ClientContext:
     ctx = ClientContext(None)
     for key, value in attributes.items():
-        ctx.attribute_values(key, value if isinstance(value, list) else [value])
+        ctx.attribute_values(key, value)
     return ctx
 
 

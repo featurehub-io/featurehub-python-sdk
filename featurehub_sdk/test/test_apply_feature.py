@@ -243,7 +243,7 @@ class ApplyFeatureAlgorithmTest(TestCase):
     def _ctx(self, **attributes) -> ClientContext:
         ctx = ClientContext(MagicMock())
         for key, value in attributes.items():
-            ctx.attribute_values(key, value if isinstance(value, list) else [value])
+            ctx.attribute_values(key, value)
         return ctx
 
     def test_percentage_strategies_stack(self):
@@ -268,6 +268,29 @@ class ApplyFeatureAlgorithmTest(TestCase):
         self.assertEqual(self._ctx(session=['ling', 'orm'], userkey='kwong').default_percentage_key, 'ling,orm')
         self.assertEqual(self._ctx(session=[''], userkey='kwong').default_percentage_key, 'kwong')
         self.assertIsNone(self._ctx().default_percentage_key)
+
+    def _matches(self, field_type: str, conditional: str, values, **context) -> bool:
+        return ApplyFeature().apply([RolloutStrategy({'id': 's', 'value': 'x', 'attributes': [
+            {'conditional': conditional, 'type': field_type, 'fieldName': 'f', 'values': values}]})],
+            'key', 'fv', self._ctx(**context)).matched
+
+    def test_context_values_of_any_type_are_converted_for_the_strategy(self):
+        from datetime import datetime, date, timezone
+        from decimal import Decimal
+        from featurehub_sdk.strategy_attribute_country_name import StrategyAttributeCountryName
+        self.assertTrue(self._matches('STRING', 'EQUALS', ['thailand'], f=StrategyAttributeCountryName.Thailand))
+        self.assertTrue(self._matches('NUMBER', 'GREATER_EQUALS', [18], f=27))
+        self.assertTrue(self._matches('NUMBER', 'EQUALS', [27.5], f=Decimal('27.5')))
+        self.assertTrue(self._matches('NUMBER', 'LESS', [30], f='27'))
+        self.assertTrue(self._matches('BOOLEAN', 'EQUALS', [True], f=True))
+        self.assertTrue(self._matches('BOOLEAN', 'EQUALS', ['true'], f='true'))
+        self.assertTrue(self._matches('STRING', 'EQUALS', ['true'], f=True))
+        self.assertTrue(self._matches('DATE', 'EQUALS', ['2026-11-17'], f=date(2026, 11, 17)))
+        self.assertTrue(self._matches('DATETIME', 'GREATER', ['2026-01-01T00:00:00Z'],
+                                      f=datetime(2026, 11, 17, tzinfo=timezone.utc)))
+        self.assertTrue(self._matches('SEMANTIC_VERSION', 'GREATER', ['1.9.0'], f='1.10.0'))
+        self.assertTrue(self._matches('IP_ADDRESS', 'INCLUDES', ['10.0.0.0/8'], f='10.1.2.3'))
+        self.assertTrue(self._matches('STRING', 'INCLUDES', ['silent'], f=('always wonder', 'keep silent')))
 
     def test_an_absent_date_is_today(self):
         found = ApplyFeature().apply([RolloutStrategy({'id': 'd', 'value': 'after', 'attributes': [
