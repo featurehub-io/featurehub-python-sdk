@@ -325,12 +325,21 @@ class ClientContext:
 
         return default_value
 
-    @property
-    def default_percentage_key(self) -> str:
-        val = self.get_attr(ClientContext.SESSION) if self.get_attr(ClientContext.SESSION) \
-            else self.get_attr(ClientContext.USER_KEY)
+    # all the values of an attribute, or None if it isn't set
+    def get_attr_values(self, key: str) -> Optional[List[Any]]:
+        values = self._attributes.get(key)
+        if values is None:
+            return None
+        return list(values) if isinstance(values, (list, tuple)) else [values]
 
-        return str(val) if val is not None else None
+    # the session if set, else the userkey; several values are joined with ","
+    @property
+    def default_percentage_key(self) -> Optional[str]:
+        for key in (ClientContext.SESSION, ClientContext.USER_KEY):
+            values = self.get_attr_values(key)
+            if values and (len(values) > 1 or values[0] not in (None, '')):
+                return ','.join('' if v is None else wire_value(v) for v in values)
+        return None
 
     def is_enabled(self, name: str) -> bool:
         return self.feature(name).is_enabled

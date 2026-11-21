@@ -12,7 +12,6 @@ version = "1.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "murmurhash2" },
-    { name = "node-semver" },
     { name = "sseclient-py" },
     { name = "urllib3" },
 ]
@@ -20,7 +19,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "murmurhash2", specifier = "==0.2.*" },
-    { name = "node-semver", specifier = "==0.9.*" },
     { name = "sseclient-py", specifier = "==1.9.*" },
     { name = "urllib3", specifier = "==2.8.*" },
 ]
@@ -46,15 +44,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/92/c5/163f313b1c7b58ef7438f1de39dc034d09aaa592f6833dc3115361b08f42/murmurhash2-0.2.10-cp36-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:55ab1b9d2626cb06ebd14f0de0c36bb88b76089561694a9fe60e54e2be5bb282", size = 1119362, upload-time = "2022-02-12T15:02:52.676Z" },
     { url = "https://files.pythonhosted.org/packages/b3/5a/670a640f9726f3a777507fbc79b3f46bf963c92f5967804cd40bbb7608d6/murmurhash2-0.2.10-cp36-abi3-win32.whl", hash = "sha256:4dc10ef47f37af89fe8b179beac8d3a7d1873214540df61721abd0701a6fa7a7", size = 101926, upload-time = "2022-02-12T15:02:53.871Z" },
     { url = "https://files.pythonhosted.org/packages/ae/9b/39220956c41e686dc5c2d5863677bdbbd5a8c6277a316a475cf65569b67c/murmurhash2-0.2.10-cp36-abi3-win_amd64.whl", hash = "sha256:2d473f7e18965b3a7f31ed6a13f330cc7a4889672b381a40427153f0166cf3cc", size = 105641, upload-time = "2022-02-12T15:02:55.045Z" },
-]
-
-[[package]]
-name = "node-semver"
-version = "0.9.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/80/46/83d4ff2e6ee95a2395c9695f92b83c7aec16a8341cf4b50be08d67f59deb/node_semver-0.9.1.tar.gz", hash = "sha256:f052dbdcbc42dd5a0c04b22829a3af98c1f29e4675cc6d88db24250a3f7f8ec7", size = 12828, upload-time = "2026-06-23T03:06:50.862Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/05/82/aee31be77e4539deb4b1305f2b42ed5f92a2ff7b8057ada67a0c3ba12187/node_semver-0.9.1-py3-none-any.whl", hash = "sha256:47669dc0f7e104cc482f69fda53c04fbe34ce9b7c9d6990e43c99a028d1628bd", size = 12051, upload-time = "2026-06-23T03:06:49.633Z" },
 ]
 
 [[package]]

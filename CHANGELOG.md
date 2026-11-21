@@ -44,6 +44,13 @@
         - polling intervals must be 0 or at least 5 seconds (a `ValueError` otherwise); a max-age is raised to 5 seconds
           and doesn't start polling with an interval of 0; a 304 is no longer logged as an error; once the environment
           is stale a context change no longer fetches
+        - rollout strategies are evaluated as specs/rollout-strategies.yaml describes, checked against its golden
+          fixture: stacked percentage strategies now work (a second percentage strategy was never matched), context
+          values that are lists match if any value does, booleans and numbers in the context no longer raise, dates
+          and date-times are compared in UTC, semantic versions compare their first three parts numerically, IPv4
+          blocks and short/octal/hex forms are understood, and an invalid pattern, address or version never matches
+          (rather than raising). An absent DATE or DATETIME attribute is today / now. Numbers in strings are parsed
+          strictly, not with JavaScript's prefix rules. node-semver is no longer a dependency
         - streaming treats a 200 response that isn't text/event-stream as a failed connection, any `edge.stale` value
           as stale, resets the reconnect delay on any FeatureHub event, tells the repository of a lost connection
           (bye), never waits less than 100ms, and the backoff multiplier is configurable with
