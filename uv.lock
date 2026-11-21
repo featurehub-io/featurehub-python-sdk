@@ -8,7 +8,7 @@ exclude-newer-span = "P7D"
 
 [[package]]
 name = "featurehub-sdk"
-version = "1.2.0"
+version = "2.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "murmurhash2" },

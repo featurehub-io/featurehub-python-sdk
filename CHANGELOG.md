@@ -1,6 +1,7 @@
 # Changelog
 
-* 1.2.0
+* 2.0.0
+    - contains breaking changes: see "Upgrading from 1.x to 2.0" in README.md for the steps to check before upgrading
     - requires Python 3.11 or later (tested on 3.11 - 3.15)
     - build moved from setup.py to pyproject.toml and uv
     - fixes for SSE for last-event-id and making streaming more resilient: it reconnects with an increasing delay
