@@ -209,7 +209,7 @@ class PollingEdgeServiceTest(TestCase):
         with patch("urllib3.PoolManager") as http_class_mock:
             poller, repo = self._poller_returning(http_class_mock, 'not json', headers={'etag': '"abc"'}, interval=0)
             asyncio.run(poller.poll())
-            self.assertIsNone(poller._etag)
+            self.assertIsNone(poller._request._etag)
 
     def test_update_interval_does_not_restart_after_invalid_key(self):
         with patch("urllib3.PoolManager") as http_class_mock:
@@ -332,7 +332,7 @@ class PollingEdgeServiceTest(TestCase):
             poller = PollingEdgeService('http://localhost', ['123'], repo, 30)
             asyncio.run(poller.poll())
             repo.notify.assert_not_called()
-            self.assertIsNone(poller._etag)
+            self.assertIsNone(poller._request._etag)
 
     def test_unexpected_status_is_logged(self):
         with patch("urllib3.PoolManager") as http_class_mock:
@@ -503,7 +503,7 @@ class PollingProtocolTest(TestCase):
     def test_query_parameters_are_in_a_fixed_order(self):
         with patch("urllib3.PoolManager"):
             poller = PollingEdgeService('http://chago/edge/?shop=omu&contextSha=1', ['ling', 'orm'], MagicMock(), 0)
-        self.assertEqual(poller._request_url('abc'),
+        self.assertEqual(poller._request.url('abc'),
                          'http://chago/edge/features?shop=omu&apiKey=ling&apiKey=orm&contextSha=abc&sdk_version=2')
 
     def test_an_empty_context_sends_a_zero_sha(self):
@@ -553,7 +553,7 @@ class PollingProtocolTest(TestCase):
         with patch("urllib3.PoolManager") as http_class_mock:
             poller, repo = self._poller(http_class_mock, headers={'etag': '"always-wonder"'}, interval=0)
             asyncio.run(poller.context_change('userkey=ling'))
-            self.assertEqual(poller._etag, '"always-wonder"')
+            self.assertEqual(poller._request._etag, '"always-wonder"')
             http_class_mock.return_value.request.return_value.headers = {}
             asyncio.run(poller.context_change('userkey=orm'))
             headers = http_class_mock.return_value.request.call_args.kwargs['headers']
@@ -563,7 +563,7 @@ class PollingProtocolTest(TestCase):
     def test_etag_from_a_previous_context_is_not_kept(self):
         with patch("urllib3.PoolManager") as http_class_mock:
             def respond(**kwargs):
-                poller._context = 'userkey=orm'  # the context changed while the request was in flight
+                poller._request._context = 'userkey=orm'  # the context changed while the request was in flight
                 resp = MagicMock(name="http-response")
                 resp.status = 200
                 resp.headers = {'etag': '"keep-silent"'}
@@ -573,7 +573,7 @@ class PollingProtocolTest(TestCase):
             http_class_mock.return_value.request.side_effect = respond
             poller = PollingEdgeService('http://localhost/', ['123'], MagicMock(spec=FeatureHubRepository), 0)
             asyncio.run(poller.context_change('userkey=ling'))
-            self.assertIsNone(poller._etag)
+            self.assertIsNone(poller._request._etag)
 
     def test_context_change_after_close_fetches_once_and_stays_closed(self):
         with patch("urllib3.PoolManager") as http_class_mock:

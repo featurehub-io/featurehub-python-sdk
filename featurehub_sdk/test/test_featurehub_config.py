@@ -129,7 +129,7 @@ class FeatureHubConfigTest(unittest.TestCase):
             edge = cfg.get_or_create_edge_service()
         self.assertIsInstance(edge, PollingEdgeService)
         self.assertEqual(edge.interval, 30)
-        self.assertEqual(edge._headers, {'X-Chago': 'ling'})
+        self.assertEqual(edge._request._headers, {'X-Chago': 'ling'})
 
     def test_reading_features_refreshes_the_edge_service(self):
         for keys in (['ling*kwong'], ['kornaphat']):
@@ -172,7 +172,7 @@ class EnvironmentModeSelectionTest(unittest.TestCase):
                 self.assertIsInstance(edge, PollingEdgeService, connect_type)
                 self.assertEqual(edge.passive, passive, connect_type)
                 self.assertEqual(edge.interval, 45)
-                self.assertEqual(edge._headers, {'X-Chago': 'orm'})
+                self.assertEqual(edge._request._headers, {'X-Chago': 'orm'})
 
     def test_active_or_passive_without_an_interval_is_an_error(self):
         for connect_type in ('active', 'passive'):
@@ -320,7 +320,7 @@ class FeatureHubConfigUsePollingTest(unittest.TestCase):
         cfg.use_polling_edge_service(0)
         edge = cfg.get_or_create_edge_service()
         self.assertIsInstance(edge, PollingEdgeService)
-        self.assertEqual(edge._headers, {'X-Chago': 'orm'})
+        self.assertEqual(edge._request._headers, {'X-Chago': 'orm'})
 
 
 if __name__ == '__main__':
