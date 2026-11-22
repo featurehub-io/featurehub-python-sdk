@@ -1,4 +1,0 @@
-urllib3==2.6.*
-sseclient-py==1.9.*
-murmurhash2==0.2.*
-node_semver==0.9.*

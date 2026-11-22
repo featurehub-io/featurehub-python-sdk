@@ -54,9 +54,13 @@ def create_app(config=None):
     client_eval_key = os.environ.get("FEATUREHUB_CLIENT_API_KEY", "default/845717ab-357e-4ce6-953c-2cb139974f2d/Zmv6OWy9K76IqnfeglTwSJoHbAAqhf*rjXljuNvAtoPVM4tpPIn")  # cnf.client_eval_key
 
     fh_config = FeatureHubConfig(edge_url, [client_eval_key])
-    # to use polling
-    fh_config.use_polling_edge_service()
-    # it takes a parameter uses the environment variable FEATUREHUB_POLL_INTERVAL if set
+
+    # streams by default; the SDK polls instead if FEATUREHUB_CONNECT_INTERVAL is set (a number and a unit, such as
+    # 30s: 0 to poll once, otherwise at least 5s), passively with FEATUREHUB_CONNECT_TYPE=passive. to
+    # choose polling in code, call fh_config.use_polling_edge_service(interval)
+    if os.environ.get("FEATUREHUB_CONNECT_INTERVAL"):
+        print(f"polling featurehub, interval {os.environ.get('FEATUREHUB_CONNECT_INTERVAL')}"
+              f"{' (passive)' if os.environ.get('FEATUREHUB_CONNECT_TYPE', '').strip().lower() == 'passive' else ''}")
 
     print("starting featurehub")
     asyncio.run(fh_config.init())
@@ -136,6 +140,10 @@ def create_app(config=None):
         print(todos)
 
         return todo_list(user), 201
+
+    @app.route("/health/liveness", methods = ["GET"])
+    def get_liveness():
+        return "OK"
 
     @app.route("/health/readiness", methods = ["GET"])
     def get_health_check():

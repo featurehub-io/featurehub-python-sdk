@@ -2,3 +2,5 @@
 /.idea/
 /dist/
 /featurehub_sdk.egg-info/
+/featurehub_sdk/__pycache__/
+/featurehub_sdk/test/__pycache__/

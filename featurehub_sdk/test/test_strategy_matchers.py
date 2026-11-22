@@ -1,3 +1,4 @@
+import datetime
 from typing import Any, Optional, List
 from unittest import TestCase
 from featurehub_sdk.strategy_matchers import MatcherRegistry
@@ -196,3 +197,51 @@ class StrategyMatcherTest(TestCase):
         self.equals(RolloutStrategyAttributeConditional.EndsWith, [':01Z'], '2017-03-06T01:01:01Z', True)
         self.equals(RolloutStrategyAttributeConditional.EndsWith, ['03', '2017', '01:01'], '2017-03-06T01:01:01Z', False)
         self.equals(RolloutStrategyAttributeConditional.EndsWith, ['rubbish'], '2017-03-06T01:01:01Z', False)
+
+
+class StrategyMatcherSpecTest(TestCase):
+    """cases rollout-strategies.yaml calls out that the golden fixture doesn't cover, and earlier bugs"""
+
+    def setUp(self) -> None:
+        self.registry = MatcherRegistry()
+
+    def match(self, field_type: str, conditional: str, values, supplied) -> bool:
+        attr = RolloutStrategyAttribute({'conditional': conditional, 'type': field_type, 'values': values,
+                                         'fieldName': 'f'})
+        return self.registry.find_matcher(attr).match(supplied, attr)
+
+    def test_non_string_context_values(self):
+        self.assertTrue(self.match('BOOLEAN', 'EQUALS', [True], True))
+        self.assertTrue(self.match('BOOLEAN', 'EQUALS', ['true'], True))
+        self.assertTrue(self.match('NUMBER', 'GREATER', [18], 24))
+        self.assertTrue(self.match('NUMBER', 'STARTS_WITH', [1], 100.0))
+        self.assertTrue(self.match('STRING', 'EQUALS', ['true'], True))
+
+    def test_native_datetimes_are_converted_to_utc(self):
+        bangkok = datetime.timezone(datetime.timedelta(hours=7))
+        self.assertTrue(self.match('DATE', 'EQUALS', ['2026-11-16'], datetime.datetime(2026, 11, 17, 2, 0, tzinfo=bangkok)))
+        self.assertTrue(self.match('DATETIME', 'EQUALS', ['2026-11-16T19:00:00Z'],
+                                   datetime.datetime(2026, 11, 17, 2, 0, 0, 123000, tzinfo=bangkok)))
+        self.assertTrue(self.match('DATE', 'EQUALS', ['2026-11-17'], datetime.date(2026, 11, 17)))
+
+    def test_invalid_values_never_match_or_raise(self):
+        self.assertFalse(self.match('STRING', 'REGEX', ['(ling'], 'lingling kwong'))
+        self.assertFalse(self.match('IP_ADDRESS', 'INCLUDES', ['10.0.0.0/8'], '::1'))
+        self.assertFalse(self.match('IP_ADDRESS', 'NOT_EQUALS', ['not-an-ip'], '10.0.0.1'))
+        self.assertFalse(self.match('SEMANTIC_VERSION', 'GREATER', ['1.0.0'], 'always wonder'))
+        self.assertFalse(self.match('DATE', 'EQUALS', ['2026-11-17'], 'keep silent'))
+
+    def test_numbers_in_strings_are_parsed_strictly(self):
+        # strict_number, not JavaScript's prefix parsing: a string that isn't exactly a number never matches
+        self.assertTrue(self.match('NUMBER', 'EQUALS', [12], '12'))
+        self.assertTrue(self.match('NUMBER', 'EQUALS', ['12.5'], '+12.5'))
+        for not_a_number in (' 12.5', '1e3', '.5', '5.', 'Infinity', float('inf'), float('nan')):
+            self.assertFalse(self.match('NUMBER', 'NOT_EQUALS', [1], not_a_number), not_a_number)
+        self.assertTrue(self.match('NUMBER', 'NOT_EQUALS', ['1e3'], 1000))  # values that aren't numbers are ignored
+        self.assertFalse(self.match('NUMBER', 'GREATER', [10], '12abc'))
+        self.assertFalse(self.match('NUMBER', 'NOT_EQUALS', [1], 'kornaphat'))
+
+    def test_semantic_versions_compare_numerically(self):
+        self.assertTrue(self.match('SEMANTIC_VERSION', 'GREATER', ['1.9.0'], '1.10.0'))
+        self.assertTrue(self.match('SEMANTIC_VERSION', 'EQUALS', ['2.0'], '2.0'))
+        self.assertFalse(self.match('SEMANTIC_VERSION', 'STARTS_WITH', ['2'], '2.0.0'))

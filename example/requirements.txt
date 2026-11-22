@@ -1,3 +1,0 @@
-Flask[async]>=2.0.3
-flask-cors>=3.0.10
-git+https://github.com/featurehub-io/featurehub-python-sdk@main#\
