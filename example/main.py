@@ -55,12 +55,12 @@ def create_app(config=None):
 
     fh_config = FeatureHubConfig(edge_url, [client_eval_key])
 
-    # streams by default; the SDK polls instead if FEATUREHUB_POLLING_INTERVAL is set (a duration with a unit, such as
-    # 30s: 0 to poll once, otherwise at least 5s), passively if FEATUREHUB_POLLING_PASSIVE is set too. to
+    # streams by default; the SDK polls instead if FEATUREHUB_CONNECT_INTERVAL is set (a number and a unit, such as
+    # 30s: 0 to poll once, otherwise at least 5s), passively with FEATUREHUB_CONNECT_TYPE=passive. to
     # choose polling in code, call fh_config.use_polling_edge_service(interval)
-    if os.environ.get("FEATUREHUB_POLLING_INTERVAL") or os.environ.get("FEATUREHUB_POLLING_PASSIVE"):
-        print(f"polling featurehub, interval {os.environ.get('FEATUREHUB_POLLING_INTERVAL', '0')}"
-              f"{' (passive)' if os.environ.get('FEATUREHUB_POLLING_PASSIVE') else ''}")
+    if os.environ.get("FEATUREHUB_CONNECT_INTERVAL"):
+        print(f"polling featurehub, interval {os.environ.get('FEATUREHUB_CONNECT_INTERVAL')}"
+              f"{' (passive)' if os.environ.get('FEATUREHUB_CONNECT_TYPE', '').strip().lower() == 'passive' else ''}")
 
     print("starting featurehub")
     asyncio.run(fh_config.init())

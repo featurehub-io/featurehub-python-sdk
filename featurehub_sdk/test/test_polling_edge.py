@@ -55,7 +55,7 @@ class PollingEdgeServiceTest(TestCase):
             resp.status = 236
             asyncio.run(poller.poll())
             repo.mark_environment_stale.assert_called_once_with()
-            http_mock.request.assert_called_with(method='GET', url='http://localhost/features?apiKey=123&contextSha=0',
+            http_mock.request.assert_called_with(method='GET', url='http://localhost/features?apiKey=123&contextSha=0&sdk_version=2',
                                                  headers={'X-SDK': 'Python',
                                                           'X-SDK-Version': sdk_version,
                                                           'if-none-match': 'abcde'
@@ -76,7 +76,7 @@ class PollingEdgeServiceTest(TestCase):
 
             poller = PollingEdgeService('http://localhost/', ['123'], repo, 0)
             asyncio.run(poller.context_change('1234'))
-            http_mock.request.assert_called_with(method='GET', url='http://localhost/features?apiKey=123&contextSha=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4',
+            http_mock.request.assert_called_with(method='GET', url='http://localhost/features?apiKey=123&contextSha=03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4&sdk_version=2',
                                                  headers={'X-SDK': 'Python',
                                                           'X-SDK-Version': sdk_version,
                                                           'x-featurehub': '1234'
@@ -499,13 +499,20 @@ class PollingProtocolTest(TestCase):
             self.assertEqual(headers['X-Gateway'], 'omu&co')
             self.assertEqual(headers.getlist('x-featurehub'), ['userkey=orm'])
 
+    # featurehub-protocol.yaml conformance query-parameter-order and sdk-version
+    def test_query_parameters_are_in_a_fixed_order(self):
+        with patch("urllib3.PoolManager"):
+            poller = PollingEdgeService('http://chago/edge/?shop=omu&contextSha=1', ['ling', 'orm'], MagicMock(), 0)
+        self.assertEqual(poller._request_url('abc'),
+                         'http://chago/edge/features?shop=omu&apiKey=ling&apiKey=orm&contextSha=abc&sdk_version=2')
+
     def test_an_empty_context_sends_a_zero_sha(self):
         with patch("urllib3.PoolManager") as http_class_mock:
             poller, repo = self._poller(http_class_mock, interval=0)
             asyncio.run(poller.context_change('userkey=lingling'))
             asyncio.run(poller.context_change(''))
             request = http_class_mock.return_value.request.call_args.kwargs
-            self.assertTrue(request['url'].endswith('&contextSha=0'))
+            self.assertTrue(request['url'].endswith('&contextSha=0&sdk_version=2'))
             self.assertNotIn('x-featurehub', request['headers'])
 
     def test_several_environments_are_one_full_set(self):

@@ -9,7 +9,7 @@ import asyncio
 import time
 from hashlib import sha256
 from typing import Dict, List
-from featurehub_sdk.edge_service import EdgeService, _env_seconds, _request_headers
+from featurehub_sdk.edge_service import EdgeService, PROTOCOL_SDK_VERSION, _edge_url, _env_seconds, _request_headers
 from featurehub_sdk.featurehub_repository import FeatureHubRepository
 from featurehub_sdk.version import sdk_version
 
@@ -97,8 +97,16 @@ class PollingEdgeService(EdgeService):
         self._http = urllib3.PoolManager()
         self._cache_control_pattern = re.compile('max-age=(\\d+)')
 
-        self._url = f"{edge_url}features?" + "&".join(map(lambda i: 'apiKey=' + i, api_keys))
+        self._edge_url = edge_url
+        self._api_keys = list(api_keys)
+        self._url = self._request_url("0")
         log.debug(f"polling url {self._url}")
+
+    # apiKey (each, in order), contextSha, sdk_version: featurehub-protocol.yaml featurehub_edge.query_parameters
+    def _request_url(self, sha_context: str) -> str:
+        return _edge_url(self._edge_url, 'features',
+                         [('apiKey', key) for key in self._api_keys] +
+                         [('contextSha', sha_context), ('sdk_version', PROTOCOL_SDK_VERSION)])
 
     # allow us to update the interval of the current polling edge service
     def update_interval(self, interval: int):
@@ -127,7 +135,7 @@ class PollingEdgeService(EdgeService):
         with self._cond:  # context_change() can update these from another thread
             context = self._context
             sha_context = "0" if self._sha_context is None else self._sha_context
-        url = f"{self._url}&contextSha={sha_context}"
+        url = self._request_url(sha_context)
 
         log.debug("polling %s", url)
         sdk_headers = {

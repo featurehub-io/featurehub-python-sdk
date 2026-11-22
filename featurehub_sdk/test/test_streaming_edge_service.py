@@ -27,14 +27,40 @@ class StreamingRetryDelayTest(TestCase):
         self.assertEqual(thread._initial_retry_delay, 0.5)
         self.assertEqual(thread._max_retry_delay, 120.0)
 
-    def test_go_durations_are_accepted(self):
+    def test_durations_take_a_single_number_and_unit(self):
         with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "500ms",
-                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "2m",
-                                     "FEATUREHUB_SSE_READ_TIMEOUT": "1m30s"}, clear=True):
+                                     "FEATUREHUB_SSE_MAX_RETRY_DELAY": "1.5m",
+                                     "FEATUREHUB_SSE_READ_TIMEOUT": " 1h "}, clear=True):
             thread = _thread()
         self.assertEqual(thread._initial_retry_delay, 0.5)
-        self.assertEqual(thread._max_retry_delay, 120.0)
-        self.assertEqual(thread._timeout.read_timeout, 90.0)
+        self.assertEqual(thread._max_retry_delay, 90.0)
+        self.assertEqual(thread._timeout.read_timeout, 3600.0)
+
+    # featurehub-protocol.yaml conformance environment-durations
+    def test_durations_follow_the_shared_grammar(self):
+        from featurehub_sdk.edge_service import parse_duration
+        for value, seconds in (('0', 0), ('0s', 0), ('30s', 30), ('500ms', 0.5), ('1.5m', 90), ('1h', 3600),
+                               (' 30s ', 30)):
+            self.assertEqual(parse_duration(value), seconds, value)
+        for value in ('30', '1.5', '1m30s', '-30s', '+30s', '30 s', '30S', '1us', '.5s', 'ten', ''):
+            with self.assertRaises(ValueError, msg=value):
+                parse_duration(value)
+
+    def test_the_backoff_multiplier_is_a_plain_number_of_at_least_1(self):
+        for value, expected in (('1', 1.0), ('1.5', 1.5), ('0.5', 2.0), ('2x', 2.0), ('-1', 2.0), ('1e1', 2.0),
+                                ('inf', 2.0)):
+            with patch.dict(os.environ, {"FEATUREHUB_SSE_BACKOFF_MULTIPLIER": value}, clear=True):
+                self.assertEqual(_thread()._backoff_multiplier, expected, value)
+
+    def test_the_default_read_timeout_outlasts_a_quiet_connection(self):
+        self.assertGreater(_StreamingThread.READ_TIMEOUT, 5 * 60)
+
+    def test_a_read_timeout_of_5_minutes_or_less_is_warned_about(self):
+        with patch.dict(os.environ, {"FEATUREHUB_SSE_READ_TIMEOUT": "5m"}, clear=True):
+            with self.assertLogs('featurehub_sdk', level='WARNING') as logs:
+                thread = _thread()
+        self.assertEqual(thread._timeout.read_timeout, 300.0)
+        self.assertIn('more than 5 minutes', logs.output[0])
 
     def test_durations_without_a_unit_are_invalid(self):
         with patch.dict(os.environ, {"FEATUREHUB_SSE_INITIAL_RETRY_DELAY": "2",
@@ -85,6 +111,12 @@ def _non_bye_calls(repo):
     return [c for c in repo.notify.call_args_list if c.args[0] != 'bye']
 
 
+def _long_connections(thread: _StreamingThread) -> _StreamingThread:
+    """makes every connection last past the short-connection threshold, as they do against a working Edge"""
+    thread.SHORT_CONNECTION_THRESHOLD = 0
+    return thread
+
+
 def _run_until_waits(thread: _StreamingThread, responses, waits: int):
     """runs the streaming loop synchronously, recording each reconnect delay and cancelling after `waits` of them"""
     thread._http = MagicMock()
@@ -117,7 +149,7 @@ class StreamingReconnectTest(TestCase):
         repo = MagicMock()
         repo.notify.side_effect = notify
         with patch.dict(os.environ, {}, clear=True):
-            thread = _StreamingThread("http://localhost/", ["key"], repo)
+            thread = _long_connections(_StreamingThread("http://localhost/", ["key"], repo))
         body = (b"event: config\ndata: {}\n\n"
                 b"event: features\ndata: [{\"id\":\"1\"}]\n\n"
                 b"event: feature\ndata: {\"id\":\"2\"}\n\n")
@@ -133,7 +165,7 @@ class StreamingReconnectTest(TestCase):
         delays = _run_until_waits(thread, [RuntimeError("boom"), RuntimeError("boom")], 2)
         self.assertEqual(delays, [1.0, 2.0])
 
-    def test_bye_and_error_do_not_reset_the_delay(self):
+    def test_bye_and_error_in_short_connections_do_not_reset_the_delay(self):
         with patch.dict(os.environ, {}, clear=True):
             thread = _thread()
         body = b"event: error\ndata: {}\n\nevent: bye\ndata: {}\n\n"
@@ -357,9 +389,9 @@ class StreamingProtocolTest(TestCase):
         resp.release_conn.assert_called()
 
     def test_every_featurehub_event_resets_the_delay(self):
-        for event in (b"ack", b"features", b"feature", b"delete_feature", b"deleteFeature", b"config"):
+        for event in (b"ack", b"features", b"feature", b"delete_feature", b"deleteFeature", b"config", b"bye"):
             with patch.dict(os.environ, {}, clear=True):
-                thread = _thread()
+                thread = _long_connections(_thread())
             body = b"event: " + event + b"\ndata: {}\n\n"
             delays = _run_until_waits(thread, [_sse_response(b""), _sse_response(body), _sse_response(b"")], 3)
             self.assertEqual(delays, [1.0, 1.0, 2.0], event)
@@ -374,7 +406,89 @@ class StreamingProtocolTest(TestCase):
             self.assertEqual(headers['X-Chago'], 'lingling kwong')
             self.assertEqual(headers['Accept'], 'text/event-stream')
             self.assertEqual(len(headers.getlist('accept')), 1)
-        self.assertEqual(thread._http.request.call_args.kwargs['headers']['Last-Event-Id'], '7')
+        self.assertEqual(thread._http.request.call_args.kwargs['headers']['Last-Event-ID'], '7')
+
+
+class _Clock:
+    """a clock that moves on by `step` seconds each time it is read"""
+    def __init__(self, step: float):
+        self.now, self.step = 0.0, step
+
+    def __call__(self):
+        self.now += self.step
+        return self.now
+
+
+# featurehub-protocol.yaml featurehub_edge.streaming.last_event_id, sdk_version and query_parameters
+class StreamingLastEventIdTest(TestCase):
+    def test_the_url_carries_context_sha_and_sdk_version_in_order(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_StreamingThread("http://chago/", ["ling*kwong"], MagicMock())._url,
+                             "http://chago/features/ling*kwong?contextSha=0&sdk_version=2")
+            self.assertEqual(_StreamingThread("http://chago/edge/?shop=omu&sdk_version=1", ["ling*kwong"],
+                                              MagicMock())._url,
+                             "http://chago/edge/features/ling*kwong?shop=omu&contextSha=0&sdk_version=2")
+
+    def test_the_last_event_id_survives_a_bye_without_one(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _long_connections(_thread())
+        _run_until_waits(thread, [_sse_response(b"id: 7\nevent: features\ndata: []\n\nevent: bye\ndata: {}\n\n"),
+                                  _sse_response(b"event: bye\ndata: {}\n\n"), _sse_response(b"")], 3)
+        requests = thread._http.request.call_args_list
+        self.assertNotIn('Last-Event-ID', requests[0].kwargs['headers'])
+        self.assertEqual(requests[1].kwargs['headers']['Last-Event-ID'], '7')
+        self.assertEqual(requests[2].kwargs['headers']['Last-Event-ID'], '7')
+
+    def test_quiet_connections_ending_in_bye_never_back_off(self):
+        repo = MagicMock()
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+        thread._clock = _Clock(30)  # each connection lasts 30s, past the threshold, before its bye
+        delays = _run_until_waits(thread, [_sse_response(b"event: bye\ndata: {}\n\n") for _ in range(6)], 6)
+        self.assertEqual(delays, [1.0] * 6)
+        self.assertFalse(thread.stopped or thread.failed)
+        self.assertEqual({c.args[0] for c in repo.notify.call_args_list}, {'bye'})
+
+    def test_a_long_connection_that_drops_with_an_error_after_features_resets_the_delay(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        thread._clock = _Clock(30)
+        failing = _sse_response(b"event: features\ndata: []\n\n")
+        with patch('sseclient.SSEClient') as sse:
+            def events():
+                yield MagicMock(event='features', data='[]', id=None)
+                raise urllib3.exceptions.ProtocolError("connection reset")
+            sse.return_value.events.side_effect = events
+            delays = _run_until_waits(thread, [_status_response(503), failing, _status_response(503)], 3)
+        self.assertEqual(delays, [1.0, 1.0, 2.0])
+
+
+# featurehub-protocol.yaml featurehub_edge.streaming.last_event_id.short_connections
+class StreamingShortConnectionTest(TestCase):
+    def test_short_connections_are_failures_whatever_they_deliver(self):
+        repo = MagicMock()
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _StreamingThread("http://localhost/", ["key"], repo)
+        thread._clock = _Clock(1)  # each connection is over in a second
+        body = b"event: ack\ndata: {}\n\nevent: features\ndata: [{\"id\":\"ling\"}]\n\nevent: bye\ndata: {}\n\n"
+        with self.assertLogs('featurehub_sdk', level='WARNING') as logs:
+            delays = _run_until_waits(thread, [_sse_response(body) for _ in range(4)], 4)
+        self.assertEqual(delays, [1.0, 2.0, 4.0, 8.0])
+        # the features are still applied
+        self.assertEqual(len([c for c in repo.notify.call_args_list if c.args[0] == 'features']), 4)
+        warnings = [line for line in logs.output if 'ending them early' in line]
+        self.assertEqual(len(warnings), 1)
+
+    def test_a_connection_past_the_threshold_ends_the_run_of_short_ones(self):
+        with patch.dict(os.environ, {}, clear=True):
+            thread = _thread()
+        times = iter([0, 1, 10, 11, 20, 21, 30, 45, 50, 51, 60, 61, 70, 71])  # opened/ended pairs: 1s, 1s, 1s, 15s, ...
+        thread._clock = lambda: next(times)
+        bye = b"event: bye\ndata: {}\n\n"
+        with self.assertLogs('featurehub_sdk', level='WARNING') as logs:
+            delays = _run_until_waits(thread, [_sse_response(bye) for _ in range(7)], 7)
+        self.assertEqual(delays, [1.0, 2.0, 4.0, 1.0, 2.0, 4.0, 8.0])
+        self.assertEqual(len([line for line in logs.output if 'ending them early' in line]), 2)
 
 
 class StreamingBackoffTest(TestCase):

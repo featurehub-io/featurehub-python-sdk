@@ -7,9 +7,11 @@ import json
 import threading
 import logging
 import sys
+import time
 
 from featurehub_sdk.client_context import InternalFeatureRepository
-from featurehub_sdk.edge_service import EdgeService, _env_number, _env_seconds, _request_headers
+from featurehub_sdk.edge_service import EdgeService, PROTOCOL_SDK_VERSION, _edge_url, _env_number, _env_seconds, \
+    _request_headers
 from featurehub_sdk.version import sdk_version
 
 log = logging.getLogger('featurehub_sdk')
@@ -17,8 +19,15 @@ log = logging.getLogger('featurehub_sdk')
 # no wait before reconnecting is shorter than this, whatever is configured, so there is never a tight reconnect loop
 _MIN_RECONNECT_DELAY = 0.1
 
-# events that show the stream works, so the reconnect delay goes back to the initial one
-_CONNECTION_WORKS_EVENTS = ('ack', 'features', 'feature', 'delete_feature', 'deleteFeature', 'config')
+# events that show the stream works, so the reconnect delay goes back to the initial one. bye is one: Edge sends it when
+# it closes a connection itself, including a quiet one that delivered nothing else (Last-Event-ID was current)
+_CONNECTION_WORKS_EVENTS = ('ack', 'features', 'feature', 'delete_feature', 'deleteFeature', 'config', 'bye')
+
+# Edge may hold a connection open, sending nothing, for up to this long before its bye
+_QUIET_CONNECTION = 5 * 60.0
+
+# after this many short connections in a row, warn that something in front of Edge is ending its streams early
+_SHORT_CONNECTION_WARNING = 3
 
 
 class _StreamingThread(threading.Thread):
@@ -46,13 +55,18 @@ class _StreamingThread(threading.Thread):
     # dropped or half-open connection doesn't block forever. overridden by FEATUREHUB_SSE_CONNECT_TIMEOUT and
     # FEATUREHUB_SSE_READ_TIMEOUT. the read timeout must be longer than the server keeps a quiet stream open
     CONNECT_TIMEOUT = 12.0
-    READ_TIMEOUT = 60.0
+    READ_TIMEOUT = 6 * 60.0
+    # a connection that ends sooner than this after it opened, with a bye or without, did not come from Edge working
+    # normally (e.g. a cache replaying a closed stream), so it is a failure and earns no reset. only tests change it
+    SHORT_CONNECTION_THRESHOLD = 10.0
 
     def __init__(self, edge_url: str, api_keys: List[str],
                  repository: InternalFeatureRepository,
                  headers: Optional[Dict[str, str]] = None):
         super().__init__(daemon=True, name="streaming-featurehub")
-        self._url = f"{edge_url}features/{api_keys[0]}"
+        # contextSha is always 0: only client evaluated keys stream, and they send no context
+        self._url = _edge_url(edge_url, f"features/{api_keys[0]}",
+                              [('contextSha', '0'), ('sdk_version', PROTOCOL_SDK_VERSION)])
         self._repository = repository
         self._headers = dict(headers) if headers else {}
         self._cancel = False
@@ -67,8 +81,14 @@ class _StreamingThread(threading.Thread):
         if self._backoff_multiplier < 1:  # it must back off, so the delay never shrinks
             log.warning("ignoring FEATUREHUB_SSE_BACKOFF_MULTIPLIER below 1, using %s", self.BACKOFF_MULTIPLIER)
             self._backoff_multiplier = self.BACKOFF_MULTIPLIER
+        read_timeout = _env_seconds('FEATUREHUB_SSE_READ_TIMEOUT', self.READ_TIMEOUT)
+        if read_timeout <= _QUIET_CONNECTION:
+            log.warning("FEATUREHUB_SSE_READ_TIMEOUT should be more than 5 minutes: FeatureHub may send nothing for that "
+                        "long, and every quiet connection would end as a failure")
         self._timeout = urllib3.Timeout(connect=_env_seconds('FEATUREHUB_SSE_CONNECT_TIMEOUT', self.CONNECT_TIMEOUT),
-                                        read=_env_seconds('FEATUREHUB_SSE_READ_TIMEOUT', self.READ_TIMEOUT))
+                                        read=read_timeout)
+        self._clock = time.monotonic
+        self._short_connections = 0
         self._http = urllib3.PoolManager()
 
     def run(self):
@@ -76,11 +96,13 @@ class _StreamingThread(threading.Thread):
         retry_delay = self._initial_retry_delay
         while not self._cancel and not self._stopped and not self._failed:
             resp = None
+            opened = None  # when the event stream opened, if it did
+            reset_earned = False
             try:
                 log.debug("featurehub starting request: %s", self._url)
                 sdk_headers = {'Accept': 'text/event-stream', 'X-SDK': 'Python', 'X-SDK-Version': sdk_version}
                 if last_event_id:
-                    sdk_headers['Last-Event-Id'] = last_event_id
+                    sdk_headers['Last-Event-ID'] = last_event_id
                 headers = _request_headers(self._headers, sdk_headers)
                 resp = self._http.request('GET', self._url, preload_content=False, headers=headers,
                                           timeout=self._timeout)
@@ -98,6 +120,7 @@ class _StreamingThread(threading.Thread):
                     log.error("featurehub returned %s rather than an event stream",
                               resp.headers.get('content-type') or 'no content type')
                 else:
+                    opened = self._clock()
                     self._client = sseclient.SSEClient(resp)
                     if self._cancel:  # closed before there was a client for close() to close
                         break
@@ -105,9 +128,10 @@ class _StreamingThread(threading.Thread):
                         if self._cancel or self._stopped or self._failed:  # no events once closed or stopped
                             break
                         # only a stream that delivers FeatureHub events counts as recovered - a server or proxy that
-                        # accepts and immediately drops the connection, or only says bye, keeps backing off
+                        # accepts and drops the connection without them keeps backing off. the reset is only made
+                        # if the connection turns out not to be short
                         if event.event in _CONNECTION_WORKS_EVENTS:
-                            retry_delay = self._initial_retry_delay
+                            reset_earned = True
                         # sseclient creates a fresh Event per message with id=None unless the message
                         # carries an id: field, but per the SSE spec the last event id persists until
                         # the server sends a new one (an empty id resets it)
@@ -146,6 +170,11 @@ class _StreamingThread(threading.Thread):
                     resp.close()
                     resp.release_conn()
 
+            # however the stream ended (bye, the server closing it, an error), the reset its events earned is made only
+            # if it was not a short connection
+            if opened is not None and self._connection_ended(opened) and reset_earned:
+                retry_delay = self._initial_retry_delay
+
             if self._cancel or self._stopped or self._failed:
                 break
 
@@ -159,6 +188,20 @@ class _StreamingThread(threading.Thread):
             log.debug("featurehub reconnecting in %ss", retry_delay)
             self._wakeup.wait(retry_delay)
             retry_delay = min(retry_delay * self._backoff_multiplier, self._max_retry_delay)
+
+    # whether a connection that opened at `opened` lasted long enough to earn the reset its events asked for. a short
+    # one is a failure whatever it delivered (a cache in front of Edge replaying a closed stream, typically), and after
+    # a few in a row that is logged once, until a connection lasts past the threshold
+    def _connection_ended(self, opened: float) -> bool:
+        if self._clock() - opened >= self.SHORT_CONNECTION_THRESHOLD:
+            self._short_connections = 0
+            return True
+        self._short_connections += 1
+        if self._short_connections == _SHORT_CONNECTION_WARNING:
+            log.warning("featurehub event streams keep ending within %ss of opening: something in front of FeatureHub "
+                        "(a CDN, cache or proxy) is ending them early. SSE responses must not be cached",
+                        self.SHORT_CONNECTION_THRESHOLD)
+        return False
 
     # a permanent failure: the repository is told, and nothing reconnects
     def _fail(self):

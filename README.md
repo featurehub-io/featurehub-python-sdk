@@ -26,22 +26,26 @@ specifications. Most applications need no code changes, but go through these ste
    config.use_polling_edge_service(30)  # poll every 30 seconds
    ```
 
-   or set the environment variable `FEATUREHUB_POLLING_INTERVAL` (for example `FEATUREHUB_POLLING_INTERVAL=30s`). If you
+   or set the environment variable `FEATUREHUB_CONNECT_INTERVAL` (for example `FEATUREHUB_CONNECT_INTERVAL=30s`). If you
    create a `StreamingEdgeClient` yourself (for example in a custom edge provider), it now raises a `ValueError` for a
    Server Evaluated key. Client Evaluated keys (those containing `*`) still stream by default.
 
    The environment variables now use the same names, and the same duration format, as the other FeatureHub SDKs.
-   The 1.x `FEATUREHUB_POLL_INTERVAL` (a number of seconds) is now `FEATUREHUB_POLLING_INTERVAL`, whose value needs a
-   unit: `FEATUREHUB_POLL_INTERVAL=30` becomes `FEATUREHUB_POLLING_INTERVAL=30s`. The old name is still read, as
-   seconds, if the new one isn't set, with a deprecation warning.
+   The 1.x `FEATUREHUB_POLL_INTERVAL` (a number of seconds) is now `FEATUREHUB_CONNECT_INTERVAL`, whose value needs a
+   unit: `FEATUREHUB_POLL_INTERVAL=30` becomes `FEATUREHUB_CONNECT_INTERVAL=30s`. The old name is still read by
+   `use_polling_edge_service()`, as seconds, with a deprecation warning, but only if neither `FEATUREHUB_CONNECT_TYPE`
+   nor `FEATUREHUB_CONNECT_INTERVAL` is set.
 
-   `FEATUREHUB_POLLING_INTERVAL` now chooses polling for any key: if it is set, a Client Evaluated key polls too, unless
-   your code chooses the edge service itself. In 1.x it only set the default interval for `use_polling_edge_service()`,
-   so if you set it for that reason but want a Client Evaluated key to stream, unset it and pass the interval in code.
+   `FEATUREHUB_CONNECT_INTERVAL` chooses polling for any key: if it is set, a Client Evaluated key polls too, unless
+   your code chooses the edge service itself. If you only want it to set the interval for `use_polling_edge_service()`
+   and want a Client Evaluated key to stream otherwise, set `FEATUREHUB_CONNECT_TYPE=streaming` as well.
+
+   `use_polling_edge_service()` no longer defaults to 30 seconds: without an interval it takes
+   `FEATUREHUB_CONNECT_INTERVAL` (or the 1.x `FEATUREHUB_POLL_INTERVAL`), and raises a `ValueError` if neither is set.
 
 3. **Check your polling intervals.** An interval must be `0` (poll once) or at least 5 seconds; anything else raises a
    `ValueError`. Check calls to `use_polling_edge_service()` and `update_interval()`, `PollingEdgeService` if you create
-   it yourself, and the `FEATUREHUB_POLLING_INTERVAL` environment variable in every environment you deploy to. A
+   it yourself, and the `FEATUREHUB_CONNECT_INTERVAL` environment variable in every environment you deploy to. A
    `Cache-Control: max-age` from the server below 5 seconds is raised to 5.
 
 4. **Check how you use `is_ready()`.** It is now true whenever features are held, including:
@@ -77,8 +81,9 @@ specifications. Most applications need no code changes, but go through these ste
    dates, datetimes or enums - and convert them as each strategy needs. Passing `None` removes the attribute.
 
 7. **Caches in front of FeatureHub Edge.** For Server Evaluated keys the `x-featurehub` header (and so the
-   `contextSha` query parameter) is now written as the other SDKs write it. If a proxy or CDN caches Edge responses
-   by these, expect cache misses once after upgrading.
+   `contextSha` query parameter) is now written as the other SDKs write it, and every request carries
+   `sdk_version=2`. If a proxy or CDN caches Edge polling responses by URL, expect cache misses once after upgrading.
+   Event streams must not be cached at all: a stream that ends within 10 seconds of opening is treated as a failure.
 
 8. **Custom repositories and matchers.** `InternalFeatureRepository` has new methods (`readiness`,
    `mark_environment_stale`, `connection_failed`, `environment_stale` and the listener methods), all with default
@@ -90,7 +95,8 @@ specifications. Most applications need no code changes, but go through these ste
 
 New in 2.0 and optional to adopt: extra headers for every request to FeatureHub
 (`FeatureHubConfig(..., headers={...})`), readiness and failure listeners, passive polling
-(`FEATUREHUB_POLLING_PASSIVE` or `use_polling_edge_service(interval, passive=True)`), and a configurable streaming backoff
+(`FEATUREHUB_CONNECT_TYPE=passive` or `use_polling_edge_service(interval, passive=True)`), configuration from
+`FEATUREHUB_EDGE_URL`, `FEATUREHUB_CLIENT_API_KEY` and `FEATUREHUB_SERVER_API_KEY`, and a configurable streaming backoff
 (`FEATUREHUB_SSE_BACKOFF_MULTIPLIER`). See [CHANGELOG.md](CHANGELOG.md) for everything that changed.
 
 ## Options to get feature updates
@@ -145,26 +151,39 @@ asyncio.run(config.init()) # run async command in sync
 
 ```
 
-Unless your code chooses how to get updates (below), the SDK chooses from the environment, in this order:
+If the URL or the API key isn't given, it is read from the environment: `FEATUREHUB_EDGE_URL`, and
+`FEATUREHUB_CLIENT_API_KEY` or else `FEATUREHUB_SERVER_API_KEY`. What your code gives always wins.
 
-1. `FEATUREHUB_POLLING_PASSIVE` set (to anything): **passive polling** - features are fetched at start, and then
-   only when they are read and are older than `FEATUREHUB_POLLING_INTERVAL` (if that isn't set, they are fetched once,
-   at start, and never again). Nothing polls in the background.
-2. `FEATUREHUB_POLLING_INTERVAL` set: **polling** at that interval.
-3. Otherwise a Client Evaluated API Key uses **SSE**. A Server Evaluated API Key has no default: you must choose
+Unless your code chooses how to get updates (below), the SDK chooses from the environment:
+
+1. `FEATUREHUB_CONNECT_TYPE=active`: **polling** every `FEATUREHUB_CONNECT_INTERVAL`, which must be set.
+2. `FEATUREHUB_CONNECT_TYPE=passive`: **passive polling** - features are fetched at start, and then only when they are
+   read and are older than `FEATUREHUB_CONNECT_INTERVAL`, which must be set (`0` fetches them once, at start). Nothing
+   polls in the background.
+3. `FEATUREHUB_CONNECT_TYPE=streaming`: **SSE**, for a Client Evaluated API Key only. `FEATUREHUB_CONNECT_INTERVAL` is
+   not used.
+4. Only `FEATUREHUB_CONNECT_INTERVAL` set: **polling** at that interval.
+5. Neither set: a Client Evaluated API Key uses **SSE**. A Server Evaluated API Key has no default: you must choose
    polling, with `config.use_polling_edge_service()` or the variables above, otherwise a `ValueError` is raised when
    the config is initialised.
 
-Intervals, delays and timeouts in environment variables are durations with a unit, as in the other FeatureHub SDKs:
-`30s`, `1m30s`, `500ms` (`ns`, `us`, `ms`, `s`, `m` and `h` are understood). A value without a unit, such as `30`, is
-invalid, except `0`.
+`FEATUREHUB_CONNECT_TYPE` is not case sensitive; any other value raises a `ValueError`, as does an interval that is
+missing where one is needed.
+
+Intervals, delays and timeouts in environment variables are a single number and a unit, as in the other FeatureHub
+SDKs: `30s`, `500ms`, `1.5m`, `1h` (`ms`, `s`, `m` and `h` are understood). A value without a unit, such as `30`, is
+invalid, except `0`, and so are compound values such as `1m30s`. `FEATUREHUB_CONNECT_INTERVAL` must be `0` (fetch once)
+or at least `5s`.
 
 If the SSE connection fails, it reconnects after a delay that starts at 1 second and doubles on each consecutive
 failure up to 30 seconds. These can be changed with the environment variables `FEATUREHUB_SSE_INITIAL_RETRY_DELAY`
 and `FEATUREHUB_SSE_MAX_RETRY_DELAY` (at least 100ms) and `FEATUREHUB_SSE_BACKOFF_MULTIPLIER` (a number, at least 1).
-It reconnects if connecting takes longer than 12 seconds, or if no data arrives on an open stream for 60 seconds;
-these can be changed with `FEATUREHUB_SSE_CONNECT_TIMEOUT` and `FEATUREHUB_SSE_READ_TIMEOUT`. If FeatureHub rejects
-the API key (any 4xx response) it stops for good.
+It reconnects if connecting takes longer than 12 seconds, or if no data arrives on an open stream for 6 minutes;
+these can be changed with `FEATUREHUB_SSE_CONNECT_TIMEOUT` and `FEATUREHUB_SSE_READ_TIMEOUT`. Keep the read timeout
+above 5 minutes: when nothing has changed, FeatureHub may hold a connection open, silent, for that long before it says
+goodbye, and the SDK reconnects without backing off. A stream that ends within 10 seconds of opening counts as a failed
+connection, as does one that ends without FeatureHub saying goodbye. If FeatureHub rejects the API key (any 4xx
+response) it stops for good.
 
 If you need to send extra headers with every request to FeatureHub (for example for an API gateway or a proxy in front
 of it), pass them to the config. The SDK's own headers take precedence over any of the same name.
@@ -178,7 +197,7 @@ If you decide to use FeatureHub polling client, after initialising the config, y
 ```python3
 config.use_polling_edge_service(30)
 # OR
-config.use_polling_edge_service() # uses environment variable FEATUREHUB_POLLING_INTERVAL or default of 30 
+config.use_polling_edge_service() # uses the environment variable FEATUREHUB_CONNECT_INTERVAL, which must be set
 # OR, to poll only when features are read and are older than the interval
 config.use_polling_edge_service(30, passive=True)
 ```

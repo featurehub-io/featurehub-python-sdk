@@ -17,8 +17,9 @@
     - polling requests time out after 12 seconds, configurable with the FEATUREHUB_POLLING_REQ_TIMEOUT environment variable
     - update_interval() takes effect immediately on a running poller, and starts polling if the interval was 0
     - the streaming client can be polled again after close(), and releases its connection when a stream ends
-    - streaming reconnects after a connect timeout (12s) or a quiet stream (60s), configurable with
-      FEATUREHUB_SSE_CONNECT_TIMEOUT and FEATUREHUB_SSE_READ_TIMEOUT
+    - streaming reconnects after a connect timeout (12s) or a stream with no data for 6 minutes, configurable with
+      FEATUREHUB_SSE_CONNECT_TIMEOUT and FEATUREHUB_SSE_READ_TIMEOUT (a warning is logged if it is 5 minutes or less,
+      as FeatureHub may hold a quiet connection open that long)
     - streaming notifies the repository of failure on a rejected API key, as polling does
     - updated dependencies based on trivy scan
     - aligned with the FeatureHub SDK protocol specification:
@@ -37,18 +38,28 @@
           isn't a list of environments is logged and ignored, as is a features notification that isn't a list
         - a context change clears the polling etag, and on a closed poller fetches once and stays closed;
           update_interval() no longer starts polling that was never started
-        - environment variables use the Go SDK's names: FEATUREHUB_POLL_INTERVAL is now FEATUREHUB_POLLING_INTERVAL
-          (the old name is still read, with a deprecation warning), the request timeout is FEATUREHUB_POLLING_REQ_TIMEOUT
-          and the streaming settings are FEATUREHUB_SSE_*. Intervals, delays and timeouts are durations with a unit, as
-          Go takes them (30s, 1m, 500ms), following the protocol specification's providers.environment_variables
-        - passive polling: FEATUREHUB_POLLING_PASSIVE, or use_polling_edge_service(interval, passive=True), fetches
+        - environment variables use the names the protocol specification gives every server-side SDK
+          (providers.environment_variables): FEATUREHUB_EDGE_URL, FEATUREHUB_CLIENT_API_KEY and
+          FEATUREHUB_SERVER_API_KEY are used when `FeatureHubConfig` is not given the URL or keys,
+          FEATUREHUB_CONNECT_TYPE (active, passive or streaming) and FEATUREHUB_CONNECT_INTERVAL choose how features are
+          fetched, the request timeout is FEATUREHUB_POLLING_REQ_TIMEOUT and the streaming settings are FEATUREHUB_SSE_*.
+          Intervals, delays and timeouts are a single number and a unit (30s, 500ms, 1.5m, 1h), or 0; compound values
+          such as 1m30s are not accepted
+        - the 1.x FEATUREHUB_POLL_INTERVAL (seconds, no unit) is still read by use_polling_edge_service(), with a
+          deprecation warning, but only when neither FEATUREHUB_CONNECT_TYPE nor FEATUREHUB_CONNECT_INTERVAL is set
+        - passive polling: FEATUREHUB_CONNECT_TYPE=passive, or use_polling_edge_service(interval, passive=True), fetches
           only when features are read and are older than the interval
-        - the default edge service is chosen from the environment as the Go SDK does: FEATUREHUB_POLLING_PASSIVE
-          (passive polling), then FEATUREHUB_POLLING_INTERVAL (polling, for any key), then streaming for a client
-          evaluated key (unless the code chooses the edge service itself)
-        - server evaluated keys have no default: polling must be chosen with use_polling_edge_service() or by setting
-          FEATUREHUB_POLLING_INTERVAL, and `StreamingEdgeClient` rejects them (the context isn't sent over streaming, so
-          FeatureHub would evaluate them without it)
+        - the default edge service is chosen from the environment: FEATUREHUB_CONNECT_TYPE=active or passive polls at
+          FEATUREHUB_CONNECT_INTERVAL (which must be set), streaming streams, FEATUREHUB_CONNECT_INTERVAL alone polls,
+          and with neither a client evaluated key streams (unless the code chooses the edge service itself)
+        - polling has no default interval: use_polling_edge_service() without one takes FEATUREHUB_CONNECT_INTERVAL,
+          and raises a `ValueError` if it is not set (it was 30 seconds)
+        - server evaluated keys have no default: polling must be chosen with use_polling_edge_service() or the
+          environment, and `StreamingEdgeClient` rejects them (the context isn't sent over streaming, so FeatureHub
+          would evaluate them without it)
+        - every request to FeatureHub sends sdk_version=2 (the protocol generation), with the query parameters in a
+          fixed order (apiKey, contextSha, sdk_version) so a CDN sees equal requests as equal; streaming now sends
+          contextSha too. An edge URL with a query string keeps it
         - any 4xx from FeatureHub stops polling or streaming for good, as does a failure event on the stream
         - extra headers can be passed to `FeatureHubConfig(headers=...)` and are sent with every request
         - polling intervals must be 0 or at least 5 seconds (a `ValueError` otherwise); a max-age is raised to 5 seconds
@@ -65,9 +76,11 @@
           well-known setters) take one value or a list, tuple or set, and None removes the attribute. Values are kept as
           given and converted to the type each strategy attribute needs when it is evaluated (enums by their value)
         - streaming treats a 200 response that isn't text/event-stream as a failed connection, any `edge.stale` value
-          as stale, resets the reconnect delay on any FeatureHub event, tells the repository of a lost connection
-          (bye), never waits less than 100ms, and the backoff multiplier is configurable with
-          FEATUREHUB_SSE_BACKOFF_MULTIPLIER
+          as stale, resets the reconnect delay on any FeatureHub event (bye included, so quiet connections that
+          FeatureHub ends with a bye never back off), tells the repository of a lost connection (bye), never waits less
+          than 100ms, and the backoff multiplier is configurable with FEATUREHUB_SSE_BACKOFF_MULTIPLIER
+        - a stream that ends less than 10 seconds after it opened is a failure, whatever it delivered, and keeps backing
+          off (typically a cache in front of FeatureHub replaying a closed stream); after 3 in a row a warning is logged
 * 1.1.0 - update dependencies
 * 1.0.0 - added in support for server based poll interval changes, stale environments, consistent logging name (now "featurehub_sdk"), updated example to match. Production grade SDK.
 * 0.0.2 - initial release

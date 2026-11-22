@@ -140,7 +140,7 @@ jobs:
           docker rm -f todo-server
           docker run -d \
             --network ${{ job.container.network }} \
-            -e FEATUREHUB_POLLING_INTERVAL=5s \
+            -e FEATUREHUB_CONNECT_INTERVAL=5s \
             --name todo-server \
             -p 8099:8099 \
             --env-file adk-env/client.env \
